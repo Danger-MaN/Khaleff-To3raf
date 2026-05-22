@@ -6,7 +6,7 @@ import { Footer } from "@/components/Footer";
 
 import { ArticleCard } from "@/components/ArticleCard";
 import { articlesStore } from "@/lib/articles";
-import { BUILTIN_CATEGORIES, categoriesStore, categoryLabel } from "@/lib/categories";
+import { categoriesStore, categoryLabel } from "@/lib/categories";
 import { Search } from "lucide-react";
 
 export const Route = createFileRoute("/")({ component: Home });
@@ -29,7 +29,7 @@ function Home() {
 
   const cats = useMemo(() => {
     void tick;
-    return ["all", ...BUILTIN_CATEGORIES, ...categoriesStore.list().map((c) => c.key)];
+    return ["all", ...categoriesStore.list().map((c) => c.key)];
   }, [tick]);
 
   const articles = useMemo(() => {
