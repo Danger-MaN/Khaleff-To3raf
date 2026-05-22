@@ -13,7 +13,4 @@ export default defineConfig({
   vite: {
     plugins: [netlify()],
   },
-  tanstackStart: {
-    server: { entry: "server" },
-  },
 });
