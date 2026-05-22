@@ -3,7 +3,9 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Header } from "@/components/Header";
 import { articlesStore, slugify, type Article } from "@/lib/articles";
-import { BUILTIN_CATEGORIES, categoriesStore, categoryLabel } from "@/lib/categories";
+import { categoriesStore, categoryLabel } from "@/lib/categories";
+import { SOCIAL_ICONS, socialsStore, type SocialIcon, type SocialLink } from "@/lib/socials";
+import * as Icons from "lucide-react";
 import { SUPPORTED_LANGS } from "@/lib/i18n";
 import { MediaRenderer } from "@/components/MediaRenderer";
 import { Plus, Pencil, Trash2, LogOut, Lock, X } from "lucide-react";
@@ -123,6 +125,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
       ) : (
         <>
           <CategoriesManager />
+          <SocialsManager />
           {articles.length === 0 ? (
             <div className="text-center py-24 text-muted-foreground italic">{t("admin.no_articles")}</div>
           ) : (
@@ -206,9 +209,6 @@ function Editor({ article, onSave, onCancel }: { article: Article; onSave: (a: A
           <div>
             <label className={labelCls}>{t("admin.fields.category")}</label>
             <select className={inputCls} value={a.category} onChange={(e) => set("category", e.target.value)}>
-              {BUILTIN_CATEGORIES.map((c) => (
-                <option key={c} value={c}>{t(`categories.${c}`)}</option>
-              ))}
               {categoriesStore.list().map((c) => (
                 <option key={c.key} value={c.key}>{c.label}</option>
               ))}
@@ -263,23 +263,36 @@ function Editor({ article, onSave, onCancel }: { article: Article; onSave: (a: A
 }
 
 function CategoriesManager() {
-  const { t, i18n } = useTranslation();
+  const { i18n } = useTranslation();
   const isAr = (i18n.language?.split("-")[0] ?? "ar") === "ar";
   const [tick, setTick] = useState(0);
   const [label, setLabel] = useState("");
+  const [editKey, setEditKey] = useState<string | null>(null);
+  const [editLabel, setEditLabel] = useState("");
+
   useEffect(() => {
     const r = () => setTick((x) => x + 1);
     window.addEventListener("kt_categories_changed", r);
     return () => window.removeEventListener("kt_categories_changed", r);
   }, []);
   void tick;
-  const custom = categoriesStore.list();
+  const all = categoriesStore.list();
 
   const add = (e: React.FormEvent) => {
     e.preventDefault();
     if (!label.trim()) return;
     categoriesStore.add(label);
     setLabel("");
+  };
+
+  const startEdit = (key: string, current: string) => {
+    setEditKey(key);
+    setEditLabel(current);
+  };
+  const saveEdit = () => {
+    if (editKey && editLabel.trim()) categoriesStore.update(editKey, editLabel);
+    setEditKey(null);
+    setEditLabel("");
   };
 
   return (
@@ -289,32 +302,50 @@ function CategoriesManager() {
       </h3>
       <p className="text-xs text-muted-foreground mb-4">
         {isAr
-          ? "الأقسام الافتراضية ثابتة. أضف أقسامًا مخصّصة لتنشر فيها مقالات جديدة."
-          : "Built-in categories are fixed. Add custom categories to publish into."}
+          ? "عدّل أو احذف أي قسم، وأضف أقسامًا جديدة بحرّية."
+          : "Edit or delete any category and add new ones freely."}
       </p>
 
-      <div className="flex flex-wrap items-center gap-2 mb-4">
-        {BUILTIN_CATEGORIES.map((c) => (
-          <span key={c} className="px-3 py-1.5 text-xs uppercase tracking-widest rounded-full border border-gold/30 text-gold/80">
-            {t(`categories.${c}`)}
-          </span>
-        ))}
-        {custom.map((c) => (
-          <span key={c.key} className="inline-flex items-center gap-2 px-3 py-1.5 text-xs uppercase tracking-widest rounded-full border border-gold/50 bg-gold/10 text-gold">
-            {c.label}
-            <button
-              type="button"
-              onClick={() => {
-                if (confirm(isAr ? "حذف هذا القسم؟" : "Delete this category?")) {
-                  categoriesStore.remove(c.key);
-                }
-              }}
-              className="opacity-70 hover:opacity-100 hover:text-destructive"
-              aria-label="remove"
-            >
-              <X className="h-3 w-3" />
-            </button>
-          </span>
+      <div className="flex flex-col gap-2 mb-4">
+        {all.map((c) => (
+          <div key={c.key} className="flex items-center gap-2 px-3 py-2 rounded-md border border-gold/30 bg-background/40">
+            {editKey === c.key ? (
+              <>
+                <input
+                  value={editLabel}
+                  onChange={(e) => setEditLabel(e.target.value)}
+                  className="flex-1 px-3 py-1.5 bg-input border border-gold/30 rounded-md text-sm outline-none focus:border-gold"
+                  autoFocus
+                />
+                <button type="button" onClick={saveEdit} className="px-3 py-1.5 bg-gold text-background text-xs uppercase tracking-widest rounded-md hover:opacity-90">
+                  {isAr ? "حفظ" : "Save"}
+                </button>
+                <button type="button" onClick={() => setEditKey(null)} className="p-1.5 rounded hover:bg-accent text-muted-foreground">
+                  <X className="h-4 w-4" />
+                </button>
+              </>
+            ) : (
+              <>
+                <span className="flex-1 text-sm text-gold">{c.label}</span>
+                <span className="text-[10px] text-muted-foreground uppercase tracking-widest hidden sm:inline">{c.key}</span>
+                <button type="button" onClick={() => startEdit(c.key, c.label)} className="p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-gold">
+                  <Pencil className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirm(isAr ? "حذف هذا القسم؟" : "Delete this category?")) {
+                      categoriesStore.remove(c.key);
+                    }
+                  }}
+                  className="p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-destructive"
+                  aria-label="remove"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </>
+            )}
+          </div>
         ))}
       </div>
 
@@ -329,6 +360,167 @@ function CategoriesManager() {
           <Plus className="h-4 w-4" /> {isAr ? "إضافة" : "Add"}
         </button>
       </form>
+    </div>
+  );
+}
+
+function SocialsManager() {
+  const { i18n } = useTranslation();
+  const isAr = (i18n.language?.split("-")[0] ?? "ar") === "ar";
+  const [tick, setTick] = useState(0);
+  const [draft, setDraft] = useState<{ label: string; href: string; icon: SocialIcon }>({
+    label: "",
+    href: "",
+    icon: "Globe",
+  });
+
+  useEffect(() => {
+    const r = () => setTick((x) => x + 1);
+    window.addEventListener("kt_socials_changed", r);
+    return () => window.removeEventListener("kt_socials_changed", r);
+  }, []);
+  void tick;
+  const items = socialsStore.list();
+
+  const inputCls = "px-3 py-2 bg-input border border-gold/30 rounded-md outline-none focus:border-gold text-sm";
+
+  const add = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!draft.label.trim() || !draft.href.trim()) return;
+    socialsStore.add(draft);
+    setDraft({ label: "", href: "", icon: "Globe" });
+  };
+
+  const renderIcon = (name: SocialIcon) => {
+    const Icon =
+      (Icons as unknown as Record<string, React.ComponentType<{ className?: string }>>)[name] ??
+      Icons.Link;
+    return <Icon className="h-4 w-4" />;
+  };
+
+  return (
+    <div className="mb-10 border border-gold/20 rounded-lg p-5 bg-card/40">
+      <h3 className="font-display text-lg gradient-gold-text mb-1">
+        {isAr ? "إدارة السوشيال ميديا" : "Manage Social Links"}
+      </h3>
+      <p className="text-xs text-muted-foreground mb-4">
+        {isAr
+          ? "ايقونات وروابط السوشيال ميديا الظاهرة في الفوتر."
+          : "Icons and links shown in the footer."}
+      </p>
+
+      <div className="flex flex-col gap-2 mb-4">
+        {items.map((s) => (
+          <SocialRow key={s.id} item={s} renderIcon={renderIcon} isAr={isAr} />
+        ))}
+        {items.length === 0 && (
+          <p className="text-xs text-muted-foreground italic">
+            {isAr ? "لا توجد روابط بعد." : "No links yet."}
+          </p>
+        )}
+      </div>
+
+      <form onSubmit={add} className="grid sm:grid-cols-[1fr_1.5fr_auto_auto] gap-2">
+        <input
+          className={inputCls}
+          placeholder={isAr ? "الاسم" : "Label"}
+          value={draft.label}
+          onChange={(e) => setDraft({ ...draft, label: e.target.value })}
+        />
+        <input
+          className={inputCls}
+          placeholder="https://..."
+          value={draft.href}
+          onChange={(e) => setDraft({ ...draft, href: e.target.value })}
+        />
+        <select
+          className={inputCls}
+          value={draft.icon}
+          onChange={(e) => setDraft({ ...draft, icon: e.target.value as SocialIcon })}
+        >
+          {SOCIAL_ICONS.map((i) => (
+            <option key={i} value={i}>{i}</option>
+          ))}
+        </select>
+        <button type="submit" className="inline-flex items-center gap-2 px-4 py-2 bg-gold text-background text-xs uppercase tracking-widest rounded-md hover:opacity-90">
+          <Plus className="h-4 w-4" /> {isAr ? "إضافة" : "Add"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function SocialRow({
+  item,
+  renderIcon,
+  isAr,
+}: {
+  item: SocialLink;
+  renderIcon: (name: SocialIcon) => React.ReactNode;
+  isAr: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(item);
+
+  const save = () => {
+    socialsStore.update(item.id, { label: draft.label, href: draft.href, icon: draft.icon });
+    setEditing(false);
+  };
+
+  const inputCls = "px-3 py-1.5 bg-input border border-gold/30 rounded-md outline-none focus:border-gold text-sm";
+
+  if (editing) {
+    return (
+      <div className="grid sm:grid-cols-[auto_1fr_1.5fr_auto_auto] gap-2 items-center px-3 py-2 rounded-md border border-gold/30 bg-background/40">
+        <span className="h-8 w-8 rounded-full border border-gold/30 flex items-center justify-center text-gold">
+          {renderIcon(draft.icon)}
+        </span>
+        <input className={inputCls} value={draft.label} onChange={(e) => setDraft({ ...draft, label: e.target.value })} />
+        <input className={inputCls} value={draft.href} onChange={(e) => setDraft({ ...draft, href: e.target.value })} />
+        <select
+          className={inputCls}
+          value={draft.icon}
+          onChange={(e) => setDraft({ ...draft, icon: e.target.value as SocialIcon })}
+        >
+          {SOCIAL_ICONS.map((i) => (
+            <option key={i} value={i}>{i}</option>
+          ))}
+        </select>
+        <div className="flex items-center gap-1">
+          <button type="button" onClick={save} className="px-3 py-1.5 bg-gold text-background text-xs uppercase tracking-widest rounded-md hover:opacity-90">
+            {isAr ? "حفظ" : "Save"}
+          </button>
+          <button type="button" onClick={() => { setDraft(item); setEditing(false); }} className="p-1.5 rounded hover:bg-accent text-muted-foreground">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-3 px-3 py-2 rounded-md border border-gold/30 bg-background/40">
+      <span className="h-8 w-8 rounded-full border border-gold/30 flex items-center justify-center text-gold shrink-0">
+        {renderIcon(item.icon)}
+      </span>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm text-gold truncate">{item.label}</div>
+        <div className="text-xs text-muted-foreground truncate">{item.href}</div>
+      </div>
+      <button type="button" onClick={() => setEditing(true)} className="p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-gold">
+        <Pencil className="h-4 w-4" />
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          if (confirm(isAr ? "حذف هذا الرابط؟" : "Delete this link?")) {
+            socialsStore.remove(item.id);
+          }
+        }}
+        className="p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-destructive"
+      >
+        <Trash2 className="h-4 w-4" />
+      </button>
     </div>
   );
 }
