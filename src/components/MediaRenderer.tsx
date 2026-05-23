@@ -22,21 +22,15 @@ function isTeraboxUrl(url: string): boolean {
 export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string }) {
   if (!url) return null;
 
-  // يوتيوب
   const ytId = getYouTubeId(url);
   if (ytId) {
     return (
       <div style={{ aspectRatio: "16/9" }} className="relative w-full rounded-lg border border-gold/30 overflow-hidden">
-        <iframe
-          src={`https://www.youtube.com/embed/${ytId}`}
-          className="absolute inset-0 w-full h-full"
-          allowFullScreen
-        />
+        <iframe src={`https://www.youtube.com/embed/${ytId}`} className="absolute inset-0 w-full h-full" allowFullScreen />
       </div>
     );
   }
 
-  // تيرابوكس - عرض الصفحة داخل iframe
   if (isTeraboxUrl(url)) {
     const embedUrl = `/.netlify/functions/terabox?embed=1&url=${encodeURIComponent(url)}`;
     return (
@@ -60,12 +54,10 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     );
   }
 
-  // فيديو مباشر
   if (/\.(mp4|webm|mov|ogg)/i.test(url)) {
     return <video controls className="w-full" style={{ aspectRatio: "16/9" }}><source src={url} /></video>;
   }
 
-  // صورة
   if (/\.(jpg|jpeg|png|gif|webp|avif)/i.test(url)) {
     return <img src={url} alt={alt} className="w-full rounded-lg" />;
   }
