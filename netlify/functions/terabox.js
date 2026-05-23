@@ -17,35 +17,106 @@ exports.handler = async (event) => {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing URL' }) };
   }
 
-  try {
-    // 1. استخدام API للحصول على الرابط الوسيط
-    const apiUrl = `https://terabox-worker.robinkumarshakya103.workers.dev/api?url=${encodeURIComponent(shareUrl)}`;
-    const apiRes = await fetch(apiUrl);
-    const apiData = await apiRes.json();
+  // جلب الكوكيز من متغيرات البيئة
+  const userCookie = process.env.TERABOX_COOKIE;
+  if (!userCookie) {
+    console.error('TERABOX_COOKIE not set');
+    return { statusCode: 500, headers, body: JSON.stringify({ error: 'Server cookie missing' }) };
+  }
 
-    if (!apiData.success || !apiData.files || apiData.files.length === 0) {
-      throw new Error('No video data');
+  try {
+    // 1. استخراج surl من الرابط
+    let surl = null;
+    const match1 = shareUrl.match(/[?&]surl=([a-zA-Z0-9_-]+)/);
+    if (match1) surl = match1[1];
+    else {
+      const match2 = shareUrl.match(/\/s\/1?([a-zA-Z0-9_-]+)/);
+      if (match2) surl = match2[1];
+    }
+    if (!surl) throw new Error('Cannot extract surl');
+    console.log(`surl: ${surl}`);
+
+    // 2. طلب صفحة المشاركة مع الكوكيز
+    const pageUrl = `https://www.terabox.com/sharing/link?surl=${surl}`;
+    const pageRes = await fetch(pageUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Cookie': userCookie,
+        'Accept': 'text/html,application/xhtml+xml',
+      },
+    });
+    const html = await pageRes.text();
+
+    // 3. استخراج الرابط المباشر المتعدد الطرق
+    let dlink = null;
+    let fileName = null;
+
+    // الطريقة الأولى: window.pageData
+    const pageDataMatch = html.match(/window\.pageData\s*=\s*({.*?});/s);
+    if (pageDataMatch) {
+      try {
+        const pageData = JSON.parse(pageDataMatch[1]);
+        if (pageData.list && pageData.list[0]) {
+          dlink = pageData.list[0].dlink;
+          fileName = pageData.list[0].server_filename;
+        }
+      } catch(e) { console.error('pageData parse error'); }
     }
 
-    let streamUrl = apiData.files[0].streaming_url;
-    if (!streamUrl) streamUrl = apiData.files[0].download_url;
-    if (!streamUrl) throw new Error('No streaming URL');
+    // الطريقة الثانية: window.yunData
+    if (!dlink) {
+      const yunDataMatch = html.match(/window\.yunData\s*=\s*({.*?});/s);
+      if (yunDataMatch) {
+        try {
+          const yunData = JSON.parse(yunDataMatch[1]);
+          if (yunData.list && yunData.list[0]) {
+            dlink = yunData.list[0].dlink;
+            fileName = yunData.list[0].server_filename;
+          }
+        } catch(e) {}
+      }
+    }
 
-    console.log(`Stream URL: ${streamUrl.substring(0, 100)}...`);
+    // الطريقة الثالثة: البحث المباشر
+    if (!dlink) {
+      const directMatch = html.match(/dlink":"([^"]+)"/);
+      if (directMatch) dlink = directMatch[1];
+    }
 
-    // 2. إذا كان الطلب هو الفيديو نفسه، نجلب الفيديو ونعيده
+    if (!dlink) throw new Error('No direct link found in page');
+    console.log(`dlink found, length: ${dlink.length}`);
+
+    // 4. متابعة إعادة التوجيه
+    let finalUrl = dlink;
+    const redirectRes = await fetch(dlink, { method: 'HEAD', redirect: 'manual' });
+    if (redirectRes.status === 301 || redirectRes.status === 302) {
+      finalUrl = redirectRes.headers.get('location');
+      console.log(`Redirected to: ${finalUrl.substring(0, 100)}...`);
+    }
+
+    // 5. إذا كان الطلب هو الفيديو نفسه
     if (isVideoRequest) {
-      console.log(`Fetching video from stream URL...`);
-      const videoRes = await fetch(streamUrl, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+      console.log(`Fetching video from: ${finalUrl.substring(0, 100)}...`);
+      const videoRes = await fetch(finalUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+          'Referer': 'https://www.terabox.com/',
+        },
       });
 
-      if (!videoRes.ok) throw new Error(`HTTP ${videoRes.status}`);
+      if (!videoRes.ok) throw new Error(`HTTP ${videoRes.status}: ${videoRes.statusText}`);
 
       const buffer = await videoRes.arrayBuffer();
-      const base64 = Buffer.from(buffer).toString('base64');
+      console.log(`Video fetched: ${buffer.byteLength} bytes`);
 
-      console.log(`Video fetched successfully, size: ${buffer.byteLength} bytes`);
+      // التحقق: إذا كان الحجم صغيراً جداً (< 10KB) فهذا يعني خطأ
+      if (buffer.byteLength < 10240) {
+        const text = Buffer.from(buffer).toString('utf-8');
+        console.error(`Small response (possibly error page): ${text.substring(0, 200)}`);
+        throw new Error('Video fetch returned error page instead of video');
+      }
+
+      const base64 = Buffer.from(buffer).toString('base64');
 
       return {
         statusCode: 200,
@@ -60,14 +131,14 @@ exports.handler = async (event) => {
       };
     }
 
-    // 3. إرجاع الرابط الوسيط للمستخدم
+    // 6. إرجاع الرابط للمستخدم
     return {
       statusCode: 200,
       headers,
-      body: JSON.stringify({ success: true, direct_url: streamUrl }),
+      body: JSON.stringify({ success: true, direct_url: finalUrl, file_name: fileName }),
     };
   } catch (err) {
-    console.error('Error:', err.message);
+    console.error('Terabox error:', err.message);
     return {
       statusCode: 500,
       headers,
