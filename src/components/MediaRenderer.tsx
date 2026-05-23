@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import Plyr from "plyr";
 import "plyr/dist/plyr.css";
-import Hls from "hls.js";
 
 // ------------------- دوال مساعدة -------------------
 function getYouTubeId(url: string): string | null {
@@ -28,17 +27,17 @@ function isTeraboxUrl(url: string): boolean {
   return /(terabox|1024terabox|teraboxapp|dubox|4funbox)\./i.test(url);
 }
 
-// ------------------- جلب الرابط من الدالة -------------------
-async function getStreamTapeDirectUrl(shareUrl: string): Promise<string | null> {
+// جلب رابط التشغيل من الدالة
+async function getStreamTapePlayableUrl(shareUrl: string): Promise<string | null> {
   try {
-    const res = await fetch(`/.netlify/functions/streamtape?url=${encodeURIComponent(shareUrl)}`);
-    const data = await res.json();
+    const response = await fetch(`/.netlify/functions/streamtape?url=${encodeURIComponent(shareUrl)}`);
+    const data = await response.json();
     if (data.success && data.direct_url) {
       return data.direct_url;
     }
     return null;
   } catch (err) {
-    console.error("getStreamTapeDirectUrl error:", err);
+    console.error("getStreamTapePlayableUrl error:", err);
     return null;
   }
 }
@@ -51,7 +50,7 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<Plyr | null>(null);
 
-  // Reset and fetch when url changes
+  // Reset when url changes
   useEffect(() => {
     setVideoSrc(null);
     setError(false);
@@ -67,7 +66,7 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     // 2. StreamTape
     if (isStreamTapeUrl(url)) {
       setLoading(true);
-      getStreamTapeDirectUrl(url)
+      getStreamTapePlayableUrl(url)
         .then(src => {
           if (src) setVideoSrc(src);
           else setError(true);
@@ -98,92 +97,36 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     setError(true);
   }, [url]);
 
-  // تهيئة Plyr مع دعم HLS
+  // تهيئة Plyr عند تحميل مصدر الفيديو
   useEffect(() => {
     if (!videoRef.current || !videoSrc) return;
     if (playerRef.current) playerRef.current.destroy();
 
-    // إذا كان المصدر هو رابط فيديو عادي (MP4)
-    if (videoSrc.endsWith('.mp4') || videoSrc.includes('.mp4?')) {
-      playerRef.current = new Plyr(videoRef.current, {
-        controls: [
-          "play-large",
-          "play",
-          "progress",
-          "current-time",
-          "duration",
-          "mute",
-          "volume",
-          "settings",
-          "pip",
-          "fullscreen",
-        ],
-        disableContextMenu: true,
-        seekTime: 10,
-        speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
-        download: false,
-      });
-      videoRef.current.src = videoSrc;
-      return;
-    }
-
-    // إذا كان المصدر هو M3U8 (HLS) - يدعم التقديم والتأخير بشكل ممتاز
-    if (Hls.isSupported()) {
-      const hls = new Hls({
-        enableWorker: true,
-        lowLatencyMode: true,
-        backBufferLength: 90,
-      });
-      hls.loadSource(videoSrc);
-      hls.attachMedia(videoRef.current);
-      
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        playerRef.current = new Plyr(videoRef.current, {
-          controls: [
-            "play-large",
-            "play",
-            "progress",
-            "current-time",
-            "duration",
-            "mute",
-            "volume",
-            "settings",
-            "pip",
-            "fullscreen",
-          ],
-          disableContextMenu: true,
-          seekTime: 10,
-          speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
-          download: false,
-        });
-      });
-      
-      hls.on(Hls.Events.ERROR, (_, data) => {
-        console.error("HLS Error:", data);
-      });
-    } 
-    // للمتصفحات التي لا تدعم HLS (مثل Safari القديم)
-    else if (videoRef.current.canPlayType('application/vnd.apple.mpegurl')) {
-      videoRef.current.src = videoSrc;
-      playerRef.current = new Plyr(videoRef.current, {
-        controls: [
-          "play-large",
-          "play",
-          "progress",
-          "current-time",
-          "duration",
-          "mute",
-          "volume",
-          "settings",
-          "pip",
-          "fullscreen",
-        ],
-        disableContextMenu: true,
-        seekTime: 10,
-        speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
-        download: false,
-      });
-    }
+    // إعدادات Plyr
+    playerRef.current = new Plyr(videoRef.current, {
+      controls: [
+        "play-large",
+        "play",
+        "progress",
+        "current-time",
+        "duration",
+        "mute",
+        "volume",
+        "captions",
+        "settings",
+        "pip",
+        "airplay",
+        "fullscreen",
+      ],
+      // منع قائمة السياق (يمنع التحميل بالزر الأيمن)
+      disableContextMenu: true,
+      // مقدار التقديم/التأخير بالثواني
+      seekTime: 10,
+      // سرعة التشغيل
+      speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
+      // إخفاء زر التحميل
+      download: false,
+    });
 
     return () => {
       playerRef.current?.destroy();
@@ -192,12 +135,19 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
   }, [videoSrc]);
 
   // عرض حالة التحميل أو الخطأ
-  if (loading) return <div className="p-8 text-center text-gold">جاري تجهيز الفيديو...</div>;
+  if (loading) {
+    return (
+      <div className="w-full rounded-lg border border-gold/30 bg-black/20 flex items-center justify-center p-8" style={{ aspectRatio: "16/9" }}>
+        <span className="text-gold/70 text-sm">جاري تجهيز الفيديو...</span>
+      </div>
+    );
+  }
+
   if (error || !videoSrc) {
     return (
-      <div className="p-8 text-center text-red-400">
-        لا يمكن عرض الفيديو.{" "}
-        <a href={url} target="_blank" rel="noopener noreferrer">
+      <div className="w-full rounded-lg border border-gold/30 bg-black/20 flex flex-col items-center justify-center gap-2 p-8" style={{ aspectRatio: "16/9" }}>
+        <span className="text-red-400/70 text-sm">لا يمكن عرض الفيديو</span>
+        <a href={url} target="_blank" rel="noopener noreferrer" className="text-gold text-xs underline">
           فتح الرابط ↗
         </a>
       </div>
@@ -205,13 +155,9 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
   }
 
   // عرض يوتيوب (iframe)
-  const isYouTube = videoSrc.includes("youtube.com/embed");
-  if (isYouTube) {
+  if (videoSrc.includes("youtube.com/embed")) {
     return (
-      <div
-        style={{ aspectRatio: "16/9" }}
-        className="relative w-full rounded-lg border border-gold/30 overflow-hidden"
-      >
+      <div className="relative w-full overflow-hidden rounded-lg border border-gold/30" style={{ aspectRatio: "16/9" }}>
         <iframe
           src={videoSrc}
           className="absolute inset-0 w-full h-full"
@@ -222,21 +168,23 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     );
   }
 
-  // صور
+  // عرض الصور
   if (/\.(jpg|jpeg|png|gif|webp|avif)/i.test(videoSrc)) {
     return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/30" />;
   }
 
-  // فيديو (مع Plyr)
+  // عرض الفيديو مع Plyr
   return (
     <div className="w-full rounded-lg border border-gold/30 bg-black overflow-hidden">
       <video
         ref={videoRef}
-        className="plyr-react plyr"
+        className="plyr-react plyr w-full"
         playsInline
         crossOrigin="anonymous"
-        controls={false}
-      />
+      >
+        <source src={videoSrc} type="video/mp4" />
+        متصفحك لا يدعم تشغيل الفيديو.
+      </video>
     </div>
   );
 }
