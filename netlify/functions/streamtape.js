@@ -1,8 +1,8 @@
 exports.handler = async (event) => {
   const headers = {
     'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Range',
-    'Access-Control-Expose-Headers': 'Content-Range, Accept-Ranges',
   };
 
   if (event.httpMethod === 'OPTIONS') {
@@ -34,7 +34,7 @@ exports.handler = async (event) => {
   }
 
   try {
-    // استخراج File ID
+    // 1. استخراج File ID
     let fileId = null;
     if (videoUrlOrId.includes('streamtape.com/v/')) {
       const match = videoUrlOrId.match(/streamtape\.com\/v\/([a-zA-Z0-9]+)/);
@@ -49,7 +49,7 @@ exports.handler = async (event) => {
 
     console.log(`Processing file ID: ${fileId}`);
 
-    // طلب تذكرة التحميل
+    // 2. طلب تذكرة التحميل
     const ticketUrl = `https://api.streamtape.com/file/dlticket?file=${fileId}&login=${apiLogin}&key=${apiKey}`;
     const ticketRes = await fetch(ticketUrl);
     const ticketData = await ticketRes.json();
@@ -65,7 +65,7 @@ exports.handler = async (event) => {
       await new Promise(resolve => setTimeout(resolve, wait_time * 1000));
     }
 
-    // طلب رابط التحميل
+    // 3. طلب رابط التحميل
     const dlUrl = `https://api.streamtape.com/file/dl?file=${fileId}&ticket=${ticket}`;
     const dlRes = await fetch(dlUrl);
     const dlData = await dlRes.json();
@@ -77,60 +77,75 @@ exports.handler = async (event) => {
     const directVideoUrl = dlData.result.url;
     console.log(`Direct URL obtained: ${directVideoUrl.substring(0, 100)}...`);
 
-    if (isDirectRequest) {
-      // الحصول على رأس Range من الطلب (إذا وجد)
-      const rangeHeader = event.headers.range || event.headers.Range;
-      console.log(`Range header: ${rangeHeader || 'none'}`);
-
-      // إعداد رؤوس الطلب للفيديو الأصلي
-      const videoFetchHeaders = { 'User-Agent': 'Mozilla/5.0' };
-      if (rangeHeader) {
-        videoFetchHeaders['Range'] = rangeHeader;
-      }
-
-      // جلب الفيديو أو الجزء المطلوب منه
-      const videoRes = await fetch(directVideoUrl, { headers: videoFetchHeaders });
-
-      if (!videoRes.ok && videoRes.status !== 206) {
-        throw new Error(`Failed to fetch video: ${videoRes.status}`);
-      }
-
-      const videoBuffer = await videoRes.arrayBuffer();
-      console.log(`Video chunk size: ${videoBuffer.byteLength} bytes, status: ${videoRes.status}`);
-
-      // إعداد رؤوس الاستجابة المناسبة
-      const responseHeaders = {
-        ...headers,
-        'Content-Type': videoRes.headers.get('content-type') || 'video/mp4',
-        'Content-Disposition': 'inline',
-        'Accept-Ranges': 'bytes',
-        'Content-Length': videoRes.headers.get('content-length') || videoBuffer.byteLength,
-      };
-
-      // إذا كان الرد جزئياً (status 206)، نضيف رؤوس النطاق
-      if (videoRes.status === 206) {
-        responseHeaders['Content-Range'] = videoRes.headers.get('content-range');
-        responseHeaders['Content-Length'] = videoRes.headers.get('content-length');
-      }
-
+    // 4. إذا لم يكن طلب فيديو مباشر، نعيد الرابط
+    if (!isDirectRequest) {
       return {
-        statusCode: videoRes.status,
+        statusCode: 200,
+        headers,
+        body: JSON.stringify({ success: true, direct_url: directVideoUrl }),
+      };
+    }
+
+    // 5. طلب الفيديو مع دعم التقديم (Range Requests)
+    console.log(`Proxying video with range support...`);
+    
+    // استخراج رأس Range من الطلب الأصلي (إن وجد)
+    const rangeHeader = event.headers.range || event.headers.Range;
+    const requestHeaders = { 'User-Agent': 'Mozilla/5.0' };
+    if (rangeHeader) {
+      requestHeaders['Range'] = rangeHeader;
+      console.log(`Range header received: ${rangeHeader}`);
+    }
+
+    // جلب الفيديو من المصدر
+    const videoRes = await fetch(directVideoUrl, {
+      headers: requestHeaders,
+    });
+
+    if (!videoRes.ok && videoRes.status !== 206) {
+      throw new Error(`Failed to fetch video: ${videoRes.status}`);
+    }
+
+    // تحويل البيانات إلى Base64
+    const buffer = await videoRes.arrayBuffer();
+    const base64 = Buffer.from(buffer).toString('base64');
+
+    // إعداد رؤوس الاستجابة مع دعم Range
+    const responseHeaders = {
+      ...headers,
+      'Content-Type': videoRes.headers.get('content-type') || 'video/mp4',
+      'Content-Disposition': 'inline',
+      'Accept-Ranges': 'bytes',
+      'Cache-Control': 'public, max-age=3600',
+    };
+
+    // إذا كان هناك رد جزئي (206 Partial Content)
+    if (videoRes.status === 206) {
+      responseHeaders['Content-Range'] = videoRes.headers.get('content-range');
+      responseHeaders['Content-Length'] = videoRes.headers.get('content-length');
+      responseHeaders['Content-Range'] = videoRes.headers.get('content-range');
+      
+      return {
+        statusCode: 206,
         headers: responseHeaders,
-        body: Buffer.from(videoBuffer).toString('base64'),
+        body: base64,
         isBase64Encoded: true,
       };
     }
 
+    // رد كامل (200 OK)
+    responseHeaders['Content-Length'] = buffer.byteLength;
     return {
       statusCode: 200,
-      headers,
-      body: JSON.stringify({ success: true, direct_url: directVideoUrl }),
+      headers: responseHeaders,
+      body: base64,
+      isBase64Encoded: true,
     };
   } catch (err) {
     console.error('Streamtape error:', err.message);
     return {
       statusCode: 500,
-      headers,
+      headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({ success: false, error: err.message }),
     };
   }
