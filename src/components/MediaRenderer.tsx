@@ -27,17 +27,17 @@ function isTeraboxUrl(url: string): boolean {
   return /(terabox|1024terabox|teraboxapp|dubox|4funbox)\./i.test(url);
 }
 
-// ------------------- جلب الرابط المُتوسط من الدالة -------------------
-async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null> {
+// ------------------- جلب الرابط من الدالة -------------------
+async function getStreamTapeDirectUrl(shareUrl: string): Promise<string | null> {
   try {
-    // 1. اطلب الرابط المباشر من الدالة
-    const infoRes = await fetch(`/.netlify/functions/streamtape?url=${encodeURIComponent(shareUrl)}`);
-    const infoData = await infoRes.json();
-    if (!infoData.success) return null;
-    // 2. أرجع رابط الدالة مع direct=1 لتوسيط الفيديو
-    return `/.netlify/functions/streamtape?direct=1&url=${encodeURIComponent(shareUrl)}`;
+    const res = await fetch(`/.netlify/functions/streamtape?url=${encodeURIComponent(shareUrl)}`);
+    const data = await res.json();
+    if (data.success && data.direct_url) {
+      return data.direct_url;
+    }
+    return null;
   } catch (err) {
-    console.error("getStreamTapeProxiedUrl error:", err);
+    console.error("getStreamTapeDirectUrl error:", err);
     return null;
   }
 }
@@ -50,7 +50,7 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<Plyr | null>(null);
 
-  // Reset when url changes
+  // Reset and fetch when url changes
   useEffect(() => {
     setVideoSrc(null);
     setError(false);
@@ -66,7 +66,7 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     // 2. StreamTape
     if (isStreamTapeUrl(url)) {
       setLoading(true);
-      getStreamTapeProxiedUrl(url)
+      getStreamTapeDirectUrl(url)
         .then(src => {
           if (src) setVideoSrc(src);
           else setError(true);
@@ -76,9 +76,8 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
       return;
     }
 
-    // 3. Terabox – يمكن إضافة دالة مشابهة له لو أردت
+    // 3. Terabox (يمكن إضافة دالة مشابهة له لو أردت لاحقاً)
     if (isTeraboxUrl(url)) {
-      // هنا يمكنك استدعاء دالة terabox القديمة
       setError(true);
       return;
     }
@@ -121,18 +120,11 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
       ],
       // منع قائمة السياق (يمنع التحميل بالزر الأيمن)
       disableContextMenu: true,
-      // مقدار التقديم/التأخير بالثواني عند الضغط على أزرار السهم (إن وجدت)
+      // مقدار التقديم/التأخير بالثواني
       seekTime: 10,
-      // تفعيل جودة الفيديو (إذا كان المصدر HLS)
-      quality: {
-        default: 720,
-        options: [1080, 720, 480, 360],
-        forced: true,
-        onChange: (quality) => console.log(`Quality changed to ${quality}p`),
-      },
       // سرعة التشغيل
       speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
-      // لا تُظهر زر التحميل (إذا كان المتصفح يوفره)
+      // لا تُظهر زر التحميل
       download: false,
     });
 
@@ -155,7 +147,7 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     );
   }
 
-  // عرض يوتيوب (iframe) أو فيديو عادي
+  // عرض يوتيوب (iframe)
   const isYouTube = videoSrc.includes("youtube.com/embed");
   if (isYouTube) {
     return (
@@ -183,8 +175,6 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     <div className="w-full rounded-lg border border-gold/30 bg-black overflow-hidden">
       <video ref={videoRef} className="plyr-react plyr" playsInline crossOrigin="anonymous">
         <source src={videoSrc} type="video/mp4" />
-        {/* إضافة ملف الفصول (Chapters) إذا كان لديك */}
-        <track kind="chapters" src="/chapters.vtt" default />
         متصفحك لا يدعم تشغيل الفيديو.
       </video>
     </div>
