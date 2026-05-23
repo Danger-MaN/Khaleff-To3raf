@@ -46,7 +46,7 @@ interface ThumbnailStripProps {
   isVisible?: boolean;
 }
 
-const SEEK_INTERVAL_MS = 2000; // 3 ثوانٍ ثابتة بين المشاهد
+const SEEK_INTERVAL_MS = 1000; // 3 ثوانٍ ثابتة بين المشاهد
 const THUMBNAIL_COUNT = 10;
 
 function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStripProps) {
@@ -235,7 +235,7 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
           return (
             <button key={idx} onClick={() => handleThumbnailClick(idx, time)} className={`flex flex-col items-center gap-1 transition-all hover:scale-105 focus:outline-none group flex-shrink-0 ${isActive ? 'scale-105' : ''}`} title={`انتقل إلى ${formatTime(time)} (${percentage}%)`}>
               <div className="relative">
-                <img src={thumb} alt={`مشهد ${idx + 1}`} className={`w-28 h-16 object-cover rounded-lg border transition-all ${isActive ? 'border-gold ring-2 ring-gold/50 shadow-lg shadow-gold/20' : 'border-gold/30 group-hover:border-gold'}`} loading="lazy" />
+                <img src={thumb} alt={`مشهد ${idx + 1}`} className={`w-28 h-16 object-cover rounded-lg border transition-all ${isActive ? 'border-gold ring-2 ring-gold/50 shadow-lg shadow-gold/2' : 'border-gold/30 group-hover:border-gold'}`} loading="lazy" />
                 <div className="absolute bottom-1 right-1 bg-black/70 text-[10px] px-1 rounded text-gold">{percentage}%</div>
                 {isActive && <div className="absolute -top-2 left-1/2 transform -translate-x-1/2 bg-gold text-black text-[10px] px-1.5 py-0.5 rounded-full whitespace-nowrap">الحالي</div>}
               </div>
