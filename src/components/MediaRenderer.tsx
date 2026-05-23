@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import Plyr from "plyr";
 import "plyr/dist/plyr.css";
-import PlyrAds from "plyr-ads";
 
 // ------------------- دوال مساعدة -------------------
 function getYouTubeId(url: string): string | null {
@@ -47,7 +46,7 @@ interface ThumbnailStripProps {
   isVisible?: boolean;
 }
 
-const SEEK_INTERVAL_MS = 1250; // 3 ثوانٍ ثابتة بين المشاهد
+const SEEK_INTERVAL_MS = 1250;
 const THUMBNAIL_COUNT = 10;
 
 function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStripProps) {
@@ -212,11 +211,6 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   );
 }
 
-// ------------------- رابط الإعلان التجريبي (VAST Tag) -------------------
-// هذا رابط تجريبي من Google IMA SDK للاختبار فقط
-// ستستبدله لاحقاً برابط الإعلان الحقيقي من شبكة إعلانات
-const DEMO_VAST_TAG = "https://pubads.g.doubleclick.net/gampad/ads?iu=/21775744923/external/vmap_ad_samples&sz=640x480&cust_params=sample_ar%3Dpreonly&ciu_szs=300x250&gdfp_req=1&ad_rule=1&output=vmap&unviewed_position_start=1&env=vp&impl=s&cmsid=496&vid=short_onecue&correlator=";
-
 // ------------------- المكون الرئيسي -------------------
 export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string }) {
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
@@ -225,7 +219,6 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
   const [playerReady, setPlayerReady] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<Plyr | null>(null);
-  const adsRef = useRef<PlyrAds | null>(null);
 
   useEffect(() => {
     setVideoSrc(null);
@@ -273,11 +266,9 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
   useEffect(() => {
     if (!videoRef.current || !videoSrc || videoSrc.includes('youtube')) return;
     if (playerRef.current) playerRef.current.destroy();
-    if (adsRef.current) adsRef.current.destroy();
 
     const initializePlayer = () => {
       if (!videoRef.current) return;
-      
       playerRef.current = new Plyr(videoRef.current, {
         controls: ["play-large", "play", "progress", "current-time", "duration", "mute", "captions", "settings", "pip", "airplay", "fullscreen"],
         disableContextMenu: true,
@@ -286,19 +277,6 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
         download: false,
         storage: { enabled: true, key: 'plyr' },
       });
-
-      // تفعيل الإعلانات (Pre-roll Ad)
-      adsRef.current = new PlyrAds();
-      adsRef.current.setup(playerRef.current, {
-        adTagUrl: DEMO_VAST_TAG, // استبدل هذا برابط الإعلان الحقيقي
-        skipButton: {
-          enabled: true,
-          text: "⏩ تخطي الإعلان",
-          delay: 5, // يظهر زر التخطي بعد 5 ثوانٍ
-        },
-        adsEnabled: true,
-      });
-
       setPlayerReady(true);
     };
 
@@ -309,14 +287,8 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     }
 
     return () => {
-      if (adsRef.current) {
-        adsRef.current.destroy();
-        adsRef.current = null;
-      }
-      if (playerRef.current) {
-        playerRef.current.destroy();
-        playerRef.current = null;
-      }
+      playerRef.current?.destroy();
+      playerRef.current = null;
       setPlayerReady(false);
     };
   }, [videoSrc]);
