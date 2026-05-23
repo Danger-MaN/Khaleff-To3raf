@@ -40,7 +40,7 @@ async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null>
   }
 }
 
-// ------------------- مكون عرض اللقطات (ثابت مع مؤقت دائري) -------------------
+// ------------------- مكون عرض اللقطات (المؤقت الدائري البسيط) -------------------
 interface ThumbnailStripProps {
   videoElement: HTMLVideoElement | null;
   onSeek: (time: number) => void;
@@ -52,7 +52,7 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   const [duration, setDuration] = useState(0);
   const [loading, setLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(true);
+  const [isAutoActive, setIsAutoActive] = useState(true);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(document.createElement('canvas'));
   const THUMBNAIL_COUNT = 10;
@@ -97,44 +97,47 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
     setLoading(false);
   }, [videoElement]);
 
-  // بدء المؤقت الدائري (يتحرك الإطار الذهبي فقط)
+  // بدء المؤقت الدائري
   const startTimer = useCallback(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
     
     intervalRef.current = setInterval(() => {
-      if (!isPlaying) return;
+      if (!isAutoActive) return;
       
       setActiveIndex(prev => {
         let next = prev + 1;
         if (next >= THUMBNAIL_COUNT) {
-          next = 0; // العودة إلى البداية - حلقة لا نهائية
+          next = 0; // العودة إلى البداية - حلقة لا نهائية صحيحة
         }
         return next;
       });
-    }, 3000); // كل 3 ثوانٍ ينتقل إلى المشهد التالي
-  }, [isPlaying]);
+    }, 3000);
+  }, [isAutoActive, THUMBNAIL_COUNT]);
 
   // إيقاف المؤقت
   const stopTimer = useCallback(() => {
-    setIsPlaying(false);
+    setIsAutoActive(false);
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
   }, []);
 
-  // إعادة تشغيل المؤقت
+  // إعادة تشغيل المؤقت من البداية
   const restartTimer = useCallback(() => {
-    setIsPlaying(true);
+    setActiveIndex(0);
+    setIsAutoActive(true);
     startTimer();
   }, [startTimer]);
 
   // عند النقر على مشهد معين
   const handleThumbnailClick = useCallback((index: number, time: number) => {
-    stopTimer();
+    if (isAutoActive) {
+      stopTimer();
+    }
     setActiveIndex(index);
     onSeek(time);
-  }, [stopTimer, onSeek]);
+  }, [isAutoActive, stopTimer, onSeek]);
 
   // بدء المؤقت عند تحميل اللقطات
   useEffect(() => {
@@ -153,7 +156,7 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   useEffect(() => {
     if (!videoElement) return;
     
-    setIsPlaying(true);
+    setIsAutoActive(true);
     setActiveIndex(0);
     
     if (videoElement.readyState >= 2) {
@@ -188,23 +191,23 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
       <div className="flex justify-between items-center mb-2 px-1">
         <div className="flex items-center gap-3">
           <span className="text-[11px] text-white/60">
-            {isPlaying ? '🔄 تسليط ضوء تلقائي (يتكرر للأبد)' : '⏸️ توقف مؤقت'}
+            {isAutoActive ? '🔄 تسليط ضوء تلقائي (حلقة لا نهائية)' : '⏸️ توقف مؤقت - تم التفاعل'}
           </span>
           <span className="text-[11px] text-gold/80">
-            {activeIndex + 1} / {THUMBNAIL_COUNT}
+            المشهد {activeIndex + 1} / {THUMBNAIL_COUNT}
           </span>
         </div>
-        {!isPlaying && (
+        {!isAutoActive && (
           <button
             onClick={restartTimer}
             className="text-[11px] text-gold/80 hover:text-gold transition-colors"
           >
-            ▶ إعادة التشغيل
+            ▶ إعادة التشغيل من البداية
           </button>
         )}
       </div>
       
-      {/* شريط المشاهد الثابت (بدون حركة) */}
+      {/* شريط المشاهد الثابت */}
       <div className="flex gap-2 overflow-x-auto scrollbar-thin scrollbar-track-gray-800 scrollbar-thumb-gold/50 pb-2">
         {thumbnails.map((thumb, idx) => {
           const time = (duration / THUMBNAIL_COUNT) * idx;
@@ -235,7 +238,7 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
                   {percentage}%
                 </div>
                 {isActive && (
-                  <div className="absolute -top-2 left-1/2 transform -translate-x-1/2 bg-gold text-black text-[10px] px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                  <div className="absolute -top-2 left-1/2 transform -translate-x-1/2 bg-gold text-black text-[10px] px-1.5 py-0.5 rounded-full whitespace-nowrap shadow-md">
                     الحالي
                   </div>
                 )}
