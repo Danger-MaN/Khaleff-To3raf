@@ -40,7 +40,7 @@ async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null>
   }
 }
 
-// ------------------- مكون عرض اللقطات (الحلقة المفرغة الحقيقية) -------------------
+// ------------------- مكون عرض اللقطات (ثابت مع مؤقت دائري) -------------------
 interface ThumbnailStripProps {
   videoElement: HTMLVideoElement | null;
   onSeek: (time: number) => void;
@@ -52,11 +52,10 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   const [duration, setDuration] = useState(0);
   const [loading, setLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [isLooping, setIsLooping] = useState(true);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(document.createElement('canvas'));
   const THUMBNAIL_COUNT = 10;
-  const INTERVAL_SECONDS = 3;
 
   const generateThumbnails = useCallback(async () => {
     if (!videoElement) return;
@@ -98,73 +97,63 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
     setLoading(false);
   }, [videoElement]);
 
-  // دالة الانتقال إلى المشهد التالي (حلقة مفرغة حقيقية)
-  const goToNextThumbnail = useCallback(() => {
-    if (!isLooping) return;
+  // بدء المؤقت الدائري (يتحرك الإطار الذهبي فقط)
+  const startTimer = useCallback(() => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
     
-    setActiveIndex(prev => {
-      let next = prev + 1;
-      if (next >= THUMBNAIL_COUNT) {
-        next = 0; // العودة إلى البداية - حلقة مفرغة لا نهائية
-      }
-      return next;
-    });
-    
-    // جدولة الانتقال التالي
-    timeoutRef.current = setTimeout(goToNextThumbnail, INTERVAL_SECONDS * 1000);
-  }, [isLooping, THUMBNAIL_COUNT]);
+    intervalRef.current = setInterval(() => {
+      if (!isPlaying) return;
+      
+      setActiveIndex(prev => {
+        let next = prev + 1;
+        if (next >= THUMBNAIL_COUNT) {
+          next = 0; // العودة إلى البداية - حلقة لا نهائية
+        }
+        return next;
+      });
+    }, 3000); // كل 3 ثوانٍ ينتقل إلى المشهد التالي
+  }, [isPlaying]);
 
-  // بدء الحلقة المفرغة
-  const startLoop = useCallback(() => {
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    setIsLooping(true);
-    setActiveIndex(0);
-    timeoutRef.current = setTimeout(goToNextThumbnail, INTERVAL_SECONDS * 1000);
-  }, [goToNextThumbnail]);
-
-  // إيقاف الحلقة
-  const stopLoop = useCallback(() => {
-    setIsLooping(false);
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
+  // إيقاف المؤقت
+  const stopTimer = useCallback(() => {
+    setIsPlaying(false);
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
     }
   }, []);
 
-  // عند النقر على مشهد معين (يتفاعل المستخدم مع الفيديو)
+  // إعادة تشغيل المؤقت
+  const restartTimer = useCallback(() => {
+    setIsPlaying(true);
+    startTimer();
+  }, [startTimer]);
+
+  // عند النقر على مشهد معين
   const handleThumbnailClick = useCallback((index: number, time: number) => {
-    stopLoop(); // تتوقف الحلقة المفرغة نهائياً
+    stopTimer();
     setActiveIndex(index);
     onSeek(time);
-  }, [stopLoop, onSeek]);
+  }, [stopTimer, onSeek]);
 
-  // تنظيف المؤقت عند إلغاء تحميل المكون
-  useEffect(() => {
-    return () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
-    };
-  }, []);
-
-  // بدء الحلقة عند تحميل اللقطات
+  // بدء المؤقت عند تحميل اللقطات
   useEffect(() => {
     if (!loading && thumbnails.length > 0) {
-      startLoop();
+      startTimer();
     }
     
     return () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
       }
     };
-  }, [loading, thumbnails, startLoop]);
+  }, [loading, thumbnails, startTimer]);
 
   // إعادة التوليد عند تغيير الفيديو
   useEffect(() => {
     if (!videoElement) return;
     
-    setIsLooping(true);
+    setIsPlaying(true);
     setActiveIndex(0);
     
     if (videoElement.readyState >= 2) {
@@ -199,15 +188,23 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
       <div className="flex justify-between items-center mb-2 px-1">
         <div className="flex items-center gap-3">
           <span className="text-[11px] text-white/60">
-            {isLooping ? '🔄 حلقة مفرغة (تتكرر للأبد)' : '⏸️ توقفت - تم تشغيل الفيديو'}
+            {isPlaying ? '🔄 تسليط ضوء تلقائي (يتكرر للأبد)' : '⏸️ توقف مؤقت'}
           </span>
           <span className="text-[11px] text-gold/80">
-            المشهد {activeIndex + 1} / {THUMBNAIL_COUNT}
+            {activeIndex + 1} / {THUMBNAIL_COUNT}
           </span>
         </div>
+        {!isPlaying && (
+          <button
+            onClick={restartTimer}
+            className="text-[11px] text-gold/80 hover:text-gold transition-colors"
+          >
+            ▶ إعادة التشغيل
+          </button>
+        )}
       </div>
       
-      {/* شريط المشاهد الثابت */}
+      {/* شريط المشاهد الثابت (بدون حركة) */}
       <div className="flex gap-2 overflow-x-auto scrollbar-thin scrollbar-track-gray-800 scrollbar-thumb-gold/50 pb-2">
         {thumbnails.map((thumb, idx) => {
           const time = (duration / THUMBNAIL_COUNT) * idx;
@@ -238,7 +235,7 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
                   {percentage}%
                 </div>
                 {isActive && (
-                  <div className="absolute -top-2 left-1/2 transform -translate-x-1/2 bg-gold text-black text-[10px] px-1.5 py-0.5 rounded-full whitespace-nowrap shadow-md">
+                  <div className="absolute -top-2 left-1/2 transform -translate-x-1/2 bg-gold text-black text-[10px] px-1.5 py-0.5 rounded-full whitespace-nowrap">
                     الحالي
                   </div>
                 )}
