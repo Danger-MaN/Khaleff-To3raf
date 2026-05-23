@@ -40,7 +40,7 @@ async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null>
   }
 }
 
-// ------------------- مكون عرض اللقطات (السلايدر التلقائي) -------------------
+// ------------------- مكون عرض اللقطات (ثابت مع مؤقت دائري) -------------------
 interface ThumbnailStripProps {
   videoElement: HTMLVideoElement | null;
   onSeek: (time: number) => void;
@@ -51,9 +51,8 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   const [thumbnails, setThumbnails] = useState<string[]>([]);
   const [duration, setDuration] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [isAutoSliding, setIsAutoSliding] = useState(true);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(true);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(document.createElement('canvas'));
   const THUMBNAIL_COUNT = 10;
@@ -98,74 +97,49 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
     setLoading(false);
   }, [videoElement]);
 
-  // بدء التمرير التلقائي (كل 3 ثوانٍ ننتقل للمشهد التالي)
-  const startAutoSlide = useCallback(() => {
+  // بدء المؤقت الدائري (يتحرك الإطار الذهبي فقط)
+  const startTimer = useCallback(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
     
     intervalRef.current = setInterval(() => {
-      if (!isAutoSliding) return;
+      if (!isPlaying) return;
       
-      setCurrentIndex(prev => {
+      setActiveIndex(prev => {
         let next = prev + 1;
         if (next >= THUMBNAIL_COUNT) {
           next = 0; // العودة إلى البداية - حلقة لا نهائية
         }
-        
-        // تمرير الحاوية إلى المشهد الجديد
-        if (containerRef.current) {
-          const scrollAmount = (next * (120 + 8)); // عرض كل مشهد (120px) + مسافة (8px)
-          containerRef.current.scrollTo({
-            left: scrollAmount,
-            behavior: 'smooth'
-          });
-        }
-        
         return next;
       });
-    }, 3000); // كل 3 ثوانٍ
-  }, [isAutoSliding]);
+    }, 3000); // كل 3 ثوانٍ ينتقل إلى المشهد التالي
+  }, [isPlaying]);
 
-  // إيقاف التمرير التلقائي
-  const stopAutoSlide = useCallback(() => {
-    setIsAutoSliding(false);
+  // إيقاف المؤقت
+  const stopTimer = useCallback(() => {
+    setIsPlaying(false);
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
   }, []);
 
-  // إعادة تشغيل التمرير التلقائي
-  const restartAutoSlide = useCallback(() => {
-    setIsAutoSliding(true);
-    startAutoSlide();
-  }, [startAutoSlide]);
+  // إعادة تشغيل المؤقت
+  const restartTimer = useCallback(() => {
+    setIsPlaying(true);
+    startTimer();
+  }, [startTimer]);
 
-  // مراقبة تفاعل المستخدم مع شريط المشاهد
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    
-    const handleUserInteraction = () => {
-      if (isAutoSliding) {
-        stopAutoSlide();
-      }
-    };
-    
-    container.addEventListener('wheel', handleUserInteraction);
-    container.addEventListener('touchstart', handleUserInteraction);
-    container.addEventListener('mousedown', handleUserInteraction);
-    
-    return () => {
-      container.removeEventListener('wheel', handleUserInteraction);
-      container.removeEventListener('touchstart', handleUserInteraction);
-      container.removeEventListener('mousedown', handleUserInteraction);
-    };
-  }, [isAutoSliding, stopAutoSlide]);
+  // عند النقر على مشهد معين
+  const handleThumbnailClick = useCallback((index: number, time: number) => {
+    stopTimer();
+    setActiveIndex(index);
+    onSeek(time);
+  }, [stopTimer, onSeek]);
 
-  // بدء التمرير التلقائي عند تحميل اللقطات
+  // بدء المؤقت عند تحميل اللقطات
   useEffect(() => {
     if (!loading && thumbnails.length > 0) {
-      startAutoSlide();
+      startTimer();
     }
     
     return () => {
@@ -173,14 +147,14 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
         clearInterval(intervalRef.current);
       }
     };
-  }, [loading, thumbnails, startAutoSlide]);
+  }, [loading, thumbnails, startTimer]);
 
   // إعادة التوليد عند تغيير الفيديو
   useEffect(() => {
     if (!videoElement) return;
     
-    setIsAutoSliding(true);
-    setCurrentIndex(0);
+    setIsPlaying(true);
+    setActiveIndex(0);
     
     if (videoElement.readyState >= 2) {
       generateThumbnails();
@@ -212,42 +186,37 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
     <div className="mt-3 w-full">
       {/* شريط الحالة */}
       <div className="flex justify-between items-center mb-2 px-1">
-        <span className="text-[11px] text-white/60">
-          {isAutoSliding ? '🎬 تمرير تلقائي (يتكرر للأبد)' : '⏸️ توقف مؤقت'}
-        </span>
-        <div className="flex gap-2">
-          {!isAutoSliding && (
-            <button
-              onClick={restartAutoSlide}
-              className="text-[11px] text-gold/80 hover:text-gold transition-colors"
-            >
-              ▶ إعادة التشغيل
-            </button>
-          )}
-          <span className="text-[11px] text-white/40">
-            {currentIndex + 1} / {THUMBNAIL_COUNT}
+        <div className="flex items-center gap-3">
+          <span className="text-[11px] text-white/60">
+            {isPlaying ? '🔄 تسليط ضوء تلقائي (يتكرر للأبد)' : '⏸️ توقف مؤقت'}
+          </span>
+          <span className="text-[11px] text-gold/80">
+            {activeIndex + 1} / {THUMBNAIL_COUNT}
           </span>
         </div>
+        {!isPlaying && (
+          <button
+            onClick={restartTimer}
+            className="text-[11px] text-gold/80 hover:text-gold transition-colors"
+          >
+            ▶ إعادة التشغيل
+          </button>
+        )}
       </div>
       
-      {/* شريط المشاهد - مع overflow-x auto للسماح بالتمرير اليدوي */}
-      <div
-        ref={containerRef}
-        className="flex gap-2 overflow-x-auto scrollbar-thin scrollbar-track-gray-800 scrollbar-thumb-gold/50 pb-2 cursor-grab active:cursor-grabbing"
-        style={{ scrollBehavior: 'smooth' }}
-      >
+      {/* شريط المشاهد الثابت (بدون حركة) */}
+      <div className="flex gap-2 overflow-x-auto scrollbar-thin scrollbar-track-gray-800 scrollbar-thumb-gold/50 pb-2">
         {thumbnails.map((thumb, idx) => {
           const time = (duration / THUMBNAIL_COUNT) * idx;
           const percentage = Math.round((time / duration) * 100);
+          const isActive = activeIndex === idx;
+          
           return (
             <button
               key={idx}
-              onClick={() => {
-                stopAutoSlide();
-                onSeek(time);
-              }}
+              onClick={() => handleThumbnailClick(idx, time)}
               className={`flex flex-col items-center gap-1 transition-all hover:scale-105 focus:outline-none group flex-shrink-0 ${
-                currentIndex === idx ? 'ring-2 ring-gold rounded-lg' : ''
+                isActive ? 'scale-105' : ''
               }`}
               title={`انتقل إلى ${formatTime(time)} (${percentage}%)`}
             >
@@ -255,14 +224,25 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
                 <img
                   src={thumb}
                   alt={`مشهد ${idx + 1}`}
-                  className="w-28 h-16 object-cover rounded-lg border border-gold/30 group-hover:border-gold transition-colors"
+                  className={`w-28 h-16 object-cover rounded-lg border transition-all ${
+                    isActive 
+                      ? 'border-gold ring-2 ring-gold/50 shadow-lg shadow-gold/20' 
+                      : 'border-gold/30 group-hover:border-gold'
+                  }`}
                   loading="lazy"
                 />
                 <div className="absolute bottom-1 right-1 bg-black/70 text-[10px] px-1 rounded text-gold">
                   {percentage}%
                 </div>
+                {isActive && (
+                  <div className="absolute -top-2 left-1/2 transform -translate-x-1/2 bg-gold text-black text-[10px] px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                    الحالي
+                  </div>
+                )}
               </div>
-              <span className="text-[10px] text-white/70 group-hover:text-gold">
+              <span className={`text-[10px] transition-colors ${
+                isActive ? 'text-gold font-medium' : 'text-white/70 group-hover:text-gold'
+              }`}>
                 {formatTime(time)}
               </span>
             </button>
