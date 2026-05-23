@@ -18,7 +18,7 @@ exports.handler = async (event) => {
   }
 
   try {
-    // 1. الحصول على الرابط المباشر من API العام
+    // 1. الحصول على الرابط الوسيط من API العام
     const apiUrl = `https://terabox-worker.robinkumarshakya103.workers.dev/api?url=${encodeURIComponent(shareUrl)}`;
     const apiRes = await fetch(apiUrl);
     const apiData = await apiRes.json();
@@ -27,51 +27,49 @@ exports.handler = async (event) => {
       throw new Error('API did not return video data');
     }
 
-    const directUrl = apiData.files[0].streaming_url || apiData.files[0].download_url;
-    if (!directUrl) throw new Error('No streaming URL in API response');
+    let directUrl = apiData.files[0].streaming_url || apiData.files[0].download_url;
+    if (!directUrl) throw new Error('No streaming URL');
 
-    console.log(`Direct URL obtained: ${directUrl.substring(0, 100)}...`);
+    console.log(`Initial direct URL: ${directUrl.substring(0, 100)}...`);
 
-    // 2. إذا كان الطلب هو الفيديو نفسه (video=1) نقوم بإعادة توجيه الفيديو (proxying)
+    // 2. متابعة إعادة التوجيه (قد يكون الرابط وسيطاً)
+    const followRes = await fetch(directUrl, { method: 'HEAD', redirect: 'follow' });
+    const finalUrl = followRes.url;
+    console.log(`Final video URL: ${finalUrl.substring(0, 100)}...`);
+
+    // 3. إذا كان الطلب هو الفيديو نفسه (video=1) نقوم ببروكسيه
     if (isVideoRequest) {
-      console.log(`Proxying video from ${directUrl}`);
-      
-      // جلب الفيديو من المصدر الأصلي
-      const videoRes = await fetch(directUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-          'Referer': 'https://www.terabox.com/',
-        },
+      console.log(`Proxying video from final URL`);
+      const videoRes = await fetch(finalUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
       });
 
-      if (!videoRes.ok) {
-        throw new Error(`Failed to fetch video: ${videoRes.status}`);
-      }
+      if (!videoRes.ok) throw new Error(`HTTP ${videoRes.status}`);
 
-      // إعادة الفيديو مباشرة مع رؤوس صحيحة
+      // تحويل البيانات إلى base64 لأن Netlify Functions تتعامل معه أفضل
+      const buffer = await videoRes.arrayBuffer();
+      const base64 = Buffer.from(buffer).toString('base64');
+
       return {
         statusCode: 200,
         headers: {
           ...headers,
           'Content-Type': videoRes.headers.get('Content-Type') || 'video/mp4',
           'Content-Disposition': 'inline',
-          'Cache-Control': 'public, max-age=3600',
-          'Accept-Ranges': 'bytes',
         },
-        body: await videoRes.arrayBuffer(),
-        isBase64Encoded: false,  // Netlify يتعامل مع ArrayBuffer مباشرة
+        body: base64,
+        isBase64Encoded: true,
       };
     }
 
-    // 3. إذا لم يكن طلب فيديو، نعيد الرابط المباشر JSON
+    // 4. إعادة الرابط النهائي للمستخدم (على شكل JSON)
     return {
       statusCode: 200,
       headers,
-      body: JSON.stringify({ success: true, direct_url: directUrl }),
+      body: JSON.stringify({ success: true, direct_url: finalUrl }),
     };
-
   } catch (err) {
-    console.error('Terabox proxy error:', err.message);
+    console.error('Terabox error:', err.message);
     return {
       statusCode: 500,
       headers,
