@@ -34,7 +34,7 @@ exports.handler = async (event) => {
   }
 
   try {
-    // استخراج File ID
+    // 1. استخراج File ID
     let fileId = null;
     if (videoUrlOrId.includes('streamtape.com/v/')) {
       const match = videoUrlOrId.match(/streamtape\.com\/v\/([a-zA-Z0-9]+)/);
@@ -49,7 +49,7 @@ exports.handler = async (event) => {
 
     console.log(`Processing file ID: ${fileId}`);
 
-    // طلب تذكرة التحميل
+    // 2. طلب تذكرة التحميل
     const ticketUrl = `https://api.streamtape.com/file/dlticket?file=${fileId}&login=${apiLogin}&key=${apiKey}`;
     const ticketRes = await fetch(ticketUrl);
     const ticketData = await ticketRes.json();
@@ -65,7 +65,7 @@ exports.handler = async (event) => {
       await new Promise(resolve => setTimeout(resolve, wait_time * 1000));
     }
 
-    // طلب رابط التحميل
+    // 3. طلب رابط التحميل
     const dlUrl = `https://api.streamtape.com/file/dl?file=${fileId}&ticket=${ticket}`;
     const dlRes = await fetch(dlUrl);
     const dlData = await dlRes.json();
@@ -75,8 +75,9 @@ exports.handler = async (event) => {
     }
 
     const directVideoUrl = dlData.result.url;
-    console.log(`Direct URL obtained`);
+    console.log(`Direct URL obtained: ${directVideoUrl.substring(0, 100)}...`);
 
+    // 4. إذا لم يكن طلب فيديو مباشر، نعيد الرابط
     if (!isDirectRequest) {
       return {
         statusCode: 200,
@@ -85,7 +86,8 @@ exports.handler = async (event) => {
       };
     }
 
-    console.log(`Proxying video with caching and range support...`);
+    // 5. طلب الفيديو مع دعم التقديم والتخزين المؤقت
+    console.log(`Proxying video with range and cache support...`);
     
     const rangeHeader = event.headers.range || event.headers.Range;
     const requestHeaders = { 'User-Agent': 'Mozilla/5.0' };
@@ -103,8 +105,7 @@ exports.handler = async (event) => {
     const buffer = await videoRes.arrayBuffer();
     const base64 = Buffer.from(buffer).toString('base64');
 
-    // رؤوس التخزين المؤقت (Caching)
-    // تخزين الفيديو لمدة 7 أيام في المتصفح
+    // رؤوس التخزين المؤقت (Caching) - تخزين الفيديو لمدة 7 أيام
     const cacheMaxAge = 60 * 60 * 24 * 7; // 7 أيام بالثواني
     
     const responseHeaders = {
@@ -113,7 +114,7 @@ exports.handler = async (event) => {
       'Content-Disposition': 'inline',
       'Accept-Ranges': 'bytes',
       'Cache-Control': `public, max-age=${cacheMaxAge}, immutable`,
-      'ETag': `"${fileId}-${Date.now()}"`, // علامة فريدة للملف
+      'ETag': `"${fileId}-${Date.now()}"`,
       'Vary': 'Accept-Encoding',
     };
 
