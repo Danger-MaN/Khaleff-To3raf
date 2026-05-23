@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import Plyr from "plyr";
 import "plyr/dist/plyr.css";
 
@@ -40,85 +40,121 @@ async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null>
   }
 }
 
-// ------------------- مكون عرض اللقطات -------------------
+// ------------------- مكون عرض اللقطات (ثابت بدون hover) -------------------
 interface ThumbnailStripProps {
   videoElement: HTMLVideoElement | null;
   onSeek: (time: number) => void;
-  visible: boolean;
+  isVisible?: boolean;
 }
 
-function ThumbnailStrip({ videoElement, onSeek, visible }: ThumbnailStripProps) {
+function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStripProps) {
   const [thumbnails, setThumbnails] = useState<string[]>([]);
   const [duration, setDuration] = useState(0);
   const [loading, setLoading] = useState(true);
   const canvasRef = useRef<HTMLCanvasElement>(document.createElement('canvas'));
-  const THUMBNAIL_COUNT = 10; // 10 لقطات
+  const THUMBNAIL_COUNT = 10;
+
+  const generateThumbnails = useCallback(async () => {
+    if (!videoElement) return;
+    
+    setLoading(true);
+    const vid = videoElement;
+    const dur = vid.duration;
+    if (!dur || isNaN(dur)) return;
+    
+    setDuration(dur);
+    const thumbs: string[] = [];
+    const step = dur / THUMBNAIL_COUNT;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+
+    canvas.width = 120;
+    canvas.height = 68;
+
+    for (let i = 0; i < THUMBNAIL_COUNT; i++) {
+      const time = step * i;
+      vid.currentTime = time;
+      
+      await new Promise<void>((resolve) => {
+        const seekedHandler = () => {
+          vid.removeEventListener('seeked', seekedHandler);
+          try {
+            ctx?.drawImage(vid, 0, 0, canvas.width, canvas.height);
+            thumbs.push(canvas.toDataURL('image/jpeg', 0.6));
+          } catch(e) {
+            thumbs.push('');
+          }
+          resolve();
+        };
+        vid.addEventListener('seeked', seekedHandler);
+      });
+    }
+
+    setThumbnails(thumbs);
+    setLoading(false);
+  }, [videoElement]);
 
   useEffect(() => {
-    if (!videoElement || !visible) return;
+    if (!videoElement) return;
+    
+    // انتظر حتى يتم تحميل الفيديو بالكامل
+    if (videoElement.readyState >= 2) {
+      generateThumbnails();
+    } else {
+      videoElement.addEventListener('loadedmetadata', generateThumbnails, { once: true });
+    }
+  }, [videoElement, generateThumbnails]);
 
-    const generateThumbnails = async () => {
-      setLoading(true);
-      const vid = videoElement;
-      const duration = vid.duration;
-      if (!duration || isNaN(duration)) return;
-      
-      setDuration(duration);
-      const thumbs: string[] = [];
-      const step = duration / THUMBNAIL_COUNT;
-      const canvas = canvasRef.current;
-      const ctx = canvas.getContext('2d');
+  if (!isVisible) return null;
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center gap-2 mt-3 p-2 bg-black/50 rounded-lg">
+        <div className="animate-spin rounded-full h-5 w-5 border-2 border-gold border-t-transparent"></div>
+        <span className="text-xs text-gold/70">جاري تحضير المشاهد...</span>
+      </div>
+    );
+  }
 
-      canvas.width = 160;  // عرض اللقطة
-      canvas.height = 90;  // ارتفاع اللقطة (16:9)
+  if (thumbnails.length === 0) return null;
 
-      for (let i = 0; i < THUMBNAIL_COUNT; i++) {
-        const time = step * i;
-        vid.currentTime = time;
-        
-        // انتظار تحميل الإطار
-        await new Promise<void>((resolve) => {
-          const seekedHandler = () => {
-            vid.removeEventListener('seeked', seekedHandler);
-            try {
-              ctx?.drawImage(vid, 0, 0, canvas.width, canvas.height);
-              thumbs.push(canvas.toDataURL('image/jpeg', 0.7));
-            } catch(e) {
-              thumbs.push('');
-            }
-            resolve();
-          };
-          vid.addEventListener('seeked', seekedHandler);
-        });
-      }
-
-      setThumbnails(thumbs);
-      setLoading(false);
-    };
-
-    generateThumbnails();
-  }, [videoElement, visible]);
-
-  if (!visible || loading || thumbnails.length === 0) return null;
+  // تنسيق الوقت (ثواني -> mm:ss)
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
 
   return (
-    <div className="absolute bottom-full left-0 mb-2 flex gap-1 bg-black/90 p-2 rounded-lg overflow-x-auto z-50 max-w-full">
-      {thumbnails.map((thumb, idx) => (
-        <div
-          key={idx}
-          className="flex flex-col items-center cursor-pointer hover:scale-105 transition-transform"
-          onClick={() => onSeek((duration / THUMBNAIL_COUNT) * idx)}
-        >
-          <img
-            src={thumb}
-            alt={`Preview at ${Math.round((duration / THUMBNAIL_COUNT) * idx)}s`}
-            className="w-32 h-18 object-cover rounded border border-gold/50"
-          />
-          <span className="text-[10px] text-white mt-1">
-            {Math.round((duration / THUMBNAIL_COUNT) * idx)}s
-          </span>
-        </div>
-      ))}
+    <div className="mt-3 w-full overflow-x-auto pb-2">
+      <div className="flex gap-2 min-w-max">
+        {thumbnails.map((thumb, idx) => {
+          const time = (duration / THUMBNAIL_COUNT) * idx;
+          const percentage = Math.round((time / duration) * 100);
+          return (
+            <button
+              key={idx}
+              onClick={() => onSeek(time)}
+              className="flex flex-col items-center gap-1 transition-all hover:scale-105 focus:outline-none group"
+              title={`انتقل إلى ${formatTime(time)} (${percentage}%)`}
+            >
+              <div className="relative">
+                <img
+                  src={thumb}
+                  alt={`مشهد ${idx + 1}`}
+                  className="w-28 h-16 object-cover rounded-lg border border-gold/30 group-hover:border-gold transition-colors"
+                  loading="lazy"
+                />
+                <div className="absolute bottom-1 right-1 bg-black/70 text-[10px] px-1 rounded text-gold">
+                  {percentage}%
+                </div>
+              </div>
+              <span className="text-[10px] text-white/70 group-hover:text-gold">
+                {formatTime(time)}
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -128,7 +164,7 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
-  const [showThumbnails, setShowThumbnails] = useState(false);
+  const [playerReady, setPlayerReady] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<Plyr | null>(null);
 
@@ -136,11 +172,13 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
   useEffect(() => {
     setVideoSrc(null);
     setError(false);
+    setPlayerReady(false);
     if (!url) return;
 
     const ytId = getYouTubeId(url);
     if (ytId) {
       setVideoSrc(`https://www.youtube.com/embed/${ytId}`);
+      setPlayerReady(true);
       return;
     }
 
@@ -176,7 +214,7 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
 
   // Initialize Plyr when video source is ready
   useEffect(() => {
-    if (!videoRef.current || !videoSrc) return;
+    if (!videoRef.current || !videoSrc || videoSrc.includes('youtube')) return;
     if (playerRef.current) playerRef.current.destroy();
 
     const initializePlayer = () => {
@@ -207,6 +245,8 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
         download: false,
         storage: { enabled: true, key: 'plyr' },
       });
+      
+      setPlayerReady(true);
     };
 
     if (videoRef.current.readyState >= 1) {
@@ -218,6 +258,7 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     return () => {
       playerRef.current?.destroy();
       playerRef.current = null;
+      setPlayerReady(false);
     };
   }, [videoSrc]);
 
@@ -225,7 +266,9 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
   const handleSeek = (time: number) => {
     if (videoRef.current) {
       videoRef.current.currentTime = time;
-      setShowThumbnails(false);
+      if (videoRef.current.paused) {
+        videoRef.current.play().catch(e => console.log('Play prevented:', e));
+      }
     }
   };
 
@@ -265,28 +308,30 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/30" />;
   }
 
-  // Video with Plyr and Thumbnail Strip
+  // Video with Plyr and Thumbnail Strip (ظاهرة دائماً)
   return (
-    <div 
-      className="relative w-full rounded-lg border border-gold/30 bg-black overflow-hidden"
-      onMouseEnter={() => setShowThumbnails(true)}
-      onMouseLeave={() => setShowThumbnails(false)}
-    >
-      <ThumbnailStrip
-        videoElement={videoRef.current}
-        onSeek={handleSeek}
-        visible={showThumbnails}
-      />
-      <video
-        ref={videoRef}
-        className="plyr-react plyr w-full"
-        playsInline
-        crossOrigin="anonymous"
-        preload="metadata"
-      >
-        <source src={videoSrc} type="video/mp4" />
-        متصفحك لا يدعم تشغيل الفيديو.
-      </video>
+    <div className="w-full rounded-lg border border-gold/30 bg-black overflow-hidden">
+      <div className="p-2">
+        <video
+          ref={videoRef}
+          className="plyr-react plyr w-full rounded-lg"
+          playsInline
+          crossOrigin="anonymous"
+          preload="metadata"
+        >
+          <source src={videoSrc} type="video/mp4" />
+          متصفحك لا يدعم تشغيل الفيديو.
+        </video>
+        
+        {/* شريط المشاهد - يظهر دائماً أسفل الفيديو */}
+        {playerReady && (
+          <ThumbnailStrip
+            videoElement={videoRef.current}
+            onSeek={handleSeek}
+            isVisible={true}
+          />
+        )}
+      </div>
     </div>
   );
 }
