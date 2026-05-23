@@ -94,17 +94,17 @@ function ArticleByIdPage() {
 
         <div className="divider-pharaoh my-10" />
 
-        {article.mediaUrl && (
-          <div className="my-10">
-            <MediaRenderer url={article.mediaUrl} alt={title} />
-          </div>
-        )}
-
         <div className="prose-article text-foreground/90 whitespace-pre-wrap">
           {content.split(/\n\n+/).map((p, i) => (
             <p key={i}>{p}</p>
           ))}
         </div>
+
+        {article.mediaUrl && (
+          <div className="my-10">
+            <MediaRenderer url={article.mediaUrl} alt={title} />
+          </div>
+        )}
 
         <div className="divider-pharaoh my-12" />
 
