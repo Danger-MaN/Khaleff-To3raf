@@ -21,13 +21,14 @@ function isTeraboxUrl(url: string): boolean {
 
 async function getProxiedVideoUrl(shareUrl: string): Promise<string | null> {
   try {
+    // نطلب الرابط الوسيط (JSON)
     const res = await fetch(`/.netlify/functions/terabox?url=${encodeURIComponent(shareUrl)}`);
     const data = await res.json();
     if (!data.success || !data.direct_url) return null;
-    // نستخدم رابط البروكسي للفيديو (مع video=1)
+    // نستخدم الفيديو عبر الـ proxy
     return `/.netlify/functions/terabox?video=1&url=${encodeURIComponent(shareUrl)}`;
   } catch (err) {
-    console.error(err);
+    console.error("getProxiedVideoUrl error:", err);
     return null;
   }
 }
