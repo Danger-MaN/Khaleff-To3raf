@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Plyr from "plyr";
 import "plyr/dist/plyr.css";
+import Hls from "hls.js";
 
 // ------------------- دوال مساعدة -------------------
 function getYouTubeId(url: string): string | null {
@@ -76,7 +77,7 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
       return;
     }
 
-    // 3. Terabox (يمكن إضافة دالة مشابهة له لو أردت لاحقاً)
+    // 3. Terabox
     if (isTeraboxUrl(url)) {
       setError(true);
       return;
@@ -97,36 +98,92 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     setError(true);
   }, [url]);
 
-  // تهيئة Plyr عند تحميل مصدر الفيديو
+  // تهيئة Plyr مع دعم HLS
   useEffect(() => {
     if (!videoRef.current || !videoSrc) return;
     if (playerRef.current) playerRef.current.destroy();
 
-    // إعدادات Plyr المتقدمة
-    playerRef.current = new Plyr(videoRef.current, {
-      controls: [
-        "play-large",   // زر التشغيل الكبير
-        "play",         // زر التشغيل الصغير
-        "progress",     // شريط التقدم
-        "current-time", // الوقت الحالي
-        "duration",     // المدة الكلية
-        "mute",         // كتم الصوت
-        "volume",       // التحكم بالصوت
-        "captions",     // الترجمة (إذا وجدت)
-        "settings",     // إعدادات الجودة والسرعة
-        "pip",          // Picture-in-Picture
-        "airplay",      // AirPlay
-        "fullscreen",   // ملء الشاشة
-      ],
-      // منع قائمة السياق (يمنع التحميل بالزر الأيمن)
-      disableContextMenu: true,
-      // مقدار التقديم/التأخير بالثواني
-      seekTime: 10,
-      // سرعة التشغيل
-      speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
-      // لا تُظهر زر التحميل
-      download: false,
-    });
+    // إذا كان المصدر هو رابط فيديو عادي (MP4)
+    if (videoSrc.endsWith('.mp4') || videoSrc.includes('.mp4?')) {
+      playerRef.current = new Plyr(videoRef.current, {
+        controls: [
+          "play-large",
+          "play",
+          "progress",
+          "current-time",
+          "duration",
+          "mute",
+          "volume",
+          "settings",
+          "pip",
+          "fullscreen",
+        ],
+        disableContextMenu: true,
+        seekTime: 10,
+        speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
+        download: false,
+      });
+      videoRef.current.src = videoSrc;
+      return;
+    }
+
+    // إذا كان المصدر هو M3U8 (HLS) - يدعم التقديم والتأخير بشكل ممتاز
+    if (Hls.isSupported()) {
+      const hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: true,
+        backBufferLength: 90,
+      });
+      hls.loadSource(videoSrc);
+      hls.attachMedia(videoRef.current);
+      
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        playerRef.current = new Plyr(videoRef.current, {
+          controls: [
+            "play-large",
+            "play",
+            "progress",
+            "current-time",
+            "duration",
+            "mute",
+            "volume",
+            "settings",
+            "pip",
+            "fullscreen",
+          ],
+          disableContextMenu: true,
+          seekTime: 10,
+          speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
+          download: false,
+        });
+      });
+      
+      hls.on(Hls.Events.ERROR, (_, data) => {
+        console.error("HLS Error:", data);
+      });
+    } 
+    // للمتصفحات التي لا تدعم HLS (مثل Safari القديم)
+    else if (videoRef.current.canPlayType('application/vnd.apple.mpegurl')) {
+      videoRef.current.src = videoSrc;
+      playerRef.current = new Plyr(videoRef.current, {
+        controls: [
+          "play-large",
+          "play",
+          "progress",
+          "current-time",
+          "duration",
+          "mute",
+          "volume",
+          "settings",
+          "pip",
+          "fullscreen",
+        ],
+        disableContextMenu: true,
+        seekTime: 10,
+        speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
+        download: false,
+      });
+    }
 
     return () => {
       playerRef.current?.destroy();
@@ -135,7 +192,7 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
   }, [videoSrc]);
 
   // عرض حالة التحميل أو الخطأ
-  if (loading) return <div className="p-8 text-center">جاري تجهيز الفيديو...</div>;
+  if (loading) return <div className="p-8 text-center text-gold">جاري تجهيز الفيديو...</div>;
   if (error || !videoSrc) {
     return (
       <div className="p-8 text-center text-red-400">
@@ -173,10 +230,13 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
   // فيديو (مع Plyr)
   return (
     <div className="w-full rounded-lg border border-gold/30 bg-black overflow-hidden">
-      <video ref={videoRef} className="plyr-react plyr" playsInline crossOrigin="anonymous">
-        <source src={videoSrc} type="video/mp4" />
-        متصفحك لا يدعم تشغيل الفيديو.
-      </video>
+      <video
+        ref={videoRef}
+        className="plyr-react plyr"
+        playsInline
+        crossOrigin="anonymous"
+        controls={false}
+      />
     </div>
   );
 }
