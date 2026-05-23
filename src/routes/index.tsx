@@ -7,6 +7,7 @@ import { Footer } from "@/components/Footer";
 import { ArticleCard } from "@/components/ArticleCard";
 import { articlesStore } from "@/lib/articles";
 import { categoriesStore, categoryLabel } from "@/lib/categories";
+import { TranslatedText } from "@/components/TranslatedText";
 import { Search } from "lucide-react";
 
 export const Route = createFileRoute("/")({ component: Home });
@@ -100,7 +101,7 @@ function Home() {
                     : "border-gold/30 text-muted-foreground hover:border-gold hover:text-gold"
                 }`}
               >
-                {c === "all" ? t("filters.all") : categoryLabel(c, t)}
+                {c === "all" ? t("filters.all") : <TranslatedText text={categoryLabel(c, t)} />}
               </button>
             ))}
           </div>
