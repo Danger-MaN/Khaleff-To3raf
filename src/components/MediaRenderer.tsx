@@ -40,7 +40,7 @@ async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null>
   }
 }
 
-// ------------------- مكون عرض اللقطات (المتحرك التلقائي الدائري) -------------------
+// ------------------- مكون عرض اللقطات (الحركة الدائرية باستخدام CSS) -------------------
 interface ThumbnailStripProps {
   videoElement: HTMLVideoElement | null;
   onSeek: (time: number) => void;
@@ -51,10 +51,8 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   const [thumbnails, setThumbnails] = useState<string[]>([]);
   const [duration, setDuration] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [isAutoScrolling, setIsAutoScrolling] = useState(true);
+  const [isAnimating, setIsAnimating] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
-  const animationRef = useRef<number | null>(null);
-  const userInteractedRef = useRef(false);
   const canvasRef = useRef<HTMLCanvasElement>(document.createElement('canvas'));
   const THUMBNAIL_COUNT = 10;
 
@@ -98,83 +96,18 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
     setLoading(false);
   }, [videoElement]);
 
-  // بدء الحركة التلقائية الدائرية (لا تتوقف أبداً)
-  const startAutoScroll = useCallback(() => {
-    if (!containerRef.current) return;
-    
-    const scroll = () => {
-      if (!containerRef.current) return;
-      
-      // سرعة التمرير (بكسل لكل إطار)
-      const scrollSpeed = 1.5;
-      containerRef.current.scrollLeft += scrollSpeed;
-      
-      // عندما نصل إلى النهاية، نعيد التمرير إلى البداية فوراً (حلقة لا نهائية)
-      const maxScroll = containerRef.current.scrollWidth - containerRef.current.clientWidth;
-      if (containerRef.current.scrollLeft >= maxScroll) {
-        containerRef.current.scrollLeft = 0;
-      }
-      
-      // استمرار الحركة دائماً (لا تتوقف)
-      animationRef.current = requestAnimationFrame(scroll);
-    };
-    
-    if (animationRef.current) {
-      cancelAnimationFrame(animationRef.current);
-    }
-    animationRef.current = requestAnimationFrame(scroll);
+  // إيقاف الحركة عند تفاعل المستخدم
+  const stopAnimation = useCallback(() => {
+    setIsAnimating(false);
   }, []);
 
-  // إيقاف الحركة التلقائية
-  const stopAutoScroll = useCallback(() => {
-    if (animationRef.current) {
-      cancelAnimationFrame(animationRef.current);
-      animationRef.current = null;
-    }
+  // إعادة تشغيل الحركة
+  const startAnimation = useCallback(() => {
+    setIsAnimating(true);
   }, []);
 
-  // التعامل مع تفاعل المستخدم (إيقاف الحركة نهائياً حتى يتفاعل مع الفيديو)
-  const handleUserInteraction = useCallback(() => {
-    if (!userInteractedRef.current && isAutoScrolling) {
-      userInteractedRef.current = true;
-      setIsAutoScrolling(false);
-      stopAutoScroll();
-    }
-  }, [isAutoScrolling, stopAutoScroll]);
-
-  // مراقبة أحداث تفاعل المستخدم مع شريط المشاهد
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    
-    const events = ['wheel', 'touchstart', 'mousedown'];
-    events.forEach(event => {
-      container.addEventListener(event, handleUserInteraction);
-    });
-    
-    return () => {
-      events.forEach(event => {
-        container.removeEventListener(event, handleUserInteraction);
-      });
-    };
-  }, [handleUserInteraction]);
-
-  // بدء الحركة عند تحميل اللقطات (تستمر للأبد حتى يتفاعل المستخدم)
-  useEffect(() => {
-    if (!loading && thumbnails.length > 0 && isAutoScrolling) {
-      startAutoScroll();
-    }
-    
-    return () => stopAutoScroll();
-  }, [loading, thumbnails, isAutoScrolling, startAutoScroll, stopAutoScroll]);
-
-  // إعادة التوليد عند تغيير الفيديو
   useEffect(() => {
     if (!videoElement) return;
-    
-    // إعادة تعيين حالة التفاعل عند تغيير الفيديو
-    userInteractedRef.current = false;
-    setIsAutoScrolling(true);
     
     if (videoElement.readyState >= 2) {
       generateThumbnails();
@@ -202,23 +135,19 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // تكرار اللقطات 5 مرات لإنشاء تأثير دائري سلس جداً
-  const infiniteThumbnails = [...thumbnails, ...thumbnails, ...thumbnails, ...thumbnails, ...thumbnails];
+  // تكرار اللقطات مرتين لإنشاء تأثير دائري لا نهائي
+  const duplicatedThumbnails = [...thumbnails, ...thumbnails, ...thumbnails, ...thumbnails, ...thumbnails];
 
   return (
     <div className="mt-3 w-full">
       {/* شريط الحالة */}
       <div className="flex justify-between items-center mb-1 px-1">
         <span className="text-[10px] text-white/50">
-          {isAutoScrolling ? '🔄 تمرير تلقائي دائري (لا يتوقف)' : '⏸️ توقف - انتظر تفاعلك مع الفيديو'}
+          {isAnimating ? '🔄 تمرير تلقائي دائري (لا يتوقف أبداً)' : '⏸️ توقف - انتظر تفاعلك مع الفيديو'}
         </span>
-        {!isAutoScrolling && (
+        {!isAnimating && (
           <button
-            onClick={() => {
-              userInteractedRef.current = false;
-              setIsAutoScrolling(true);
-              startAutoScroll();
-            }}
+            onClick={startAnimation}
             className="text-[10px] text-gold/70 hover:text-gold transition-colors"
           >
             إعادة تشغيل التمرير التلقائي
@@ -226,49 +155,69 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
         )}
       </div>
       
-      {/* شريط المشاهد المتحرك الدائري */}
-      <div
-        ref={containerRef}
-        className="flex gap-2 overflow-x-auto scrollbar-thin scrollbar-track-gray-800 scrollbar-thumb-gold/50 pb-2 cursor-grab active:cursor-grabbing"
-        style={{ scrollBehavior: 'auto' }}
+      {/* شريط المشاهد المتحرك الدائري - باستخدام CSS animation */}
+      <div 
+        className="relative w-full overflow-hidden rounded-lg"
+        onMouseEnter={stopAnimation}
+        onTouchStart={stopAnimation}
       >
-        {infiniteThumbnails.map((thumb, idx) => {
-          const originalIdx = idx % thumbnails.length;
-          const time = (duration / thumbnails.length) * originalIdx;
-          const percentage = Math.round((time / duration) * 100);
-          return (
-            <button
-              key={`${originalIdx}-${idx}`}
-              onClick={() => {
-                // عند النقر على مشهد، ننقل الفيديو ونتوقف عن التمرير التلقائي نهائياً
-                if (isAutoScrolling) {
-                  userInteractedRef.current = true;
-                  setIsAutoScrolling(false);
-                  stopAutoScroll();
-                }
-                onSeek(time);
-              }}
-              className="flex flex-col items-center gap-1 transition-all hover:scale-105 focus:outline-none group flex-shrink-0"
-              title={`انتقل إلى ${formatTime(time)} (${percentage}%)`}
-            >
-              <div className="relative">
-                <img
-                  src={thumb}
-                  alt={`مشهد ${originalIdx + 1}`}
-                  className="w-28 h-16 object-cover rounded-lg border border-gold/30 group-hover:border-gold transition-colors"
-                  loading="lazy"
-                />
-                <div className="absolute bottom-1 right-1 bg-black/70 text-[10px] px-1 rounded text-gold">
-                  {percentage}%
+        <div
+          className={`flex gap-2 ${isAnimating ? 'animate-infinite-scroll' : ''}`}
+          style={{
+            width: 'fit-content',
+          }}
+        >
+          {duplicatedThumbnails.map((thumb, idx) => {
+            const originalIdx = idx % thumbnails.length;
+            const time = (duration / thumbnails.length) * originalIdx;
+            const percentage = Math.round((time / duration) * 100);
+            return (
+              <button
+                key={`${originalIdx}-${idx}`}
+                onClick={() => {
+                  stopAnimation();
+                  onSeek(time);
+                }}
+                className="flex flex-col items-center gap-1 transition-all hover:scale-105 focus:outline-none group flex-shrink-0"
+                title={`انتقل إلى ${formatTime(time)} (${percentage}%)`}
+              >
+                <div className="relative">
+                  <img
+                    src={thumb}
+                    alt={`مشهد ${originalIdx + 1}`}
+                    className="w-28 h-16 object-cover rounded-lg border border-gold/30 group-hover:border-gold transition-colors"
+                    loading="lazy"
+                  />
+                  <div className="absolute bottom-1 right-1 bg-black/70 text-[10px] px-1 rounded text-gold">
+                    {percentage}%
+                  </div>
                 </div>
-              </div>
-              <span className="text-[10px] text-white/70 group-hover:text-gold">
-                {formatTime(time)}
-              </span>
-            </button>
-          );
-        })}
+                <span className="text-[10px] text-white/70 group-hover:text-gold">
+                  {formatTime(time)}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
+
+      {/* CSS للحركة الدائرية اللانهائية */}
+      <style jsx>{`
+        @keyframes infiniteScroll {
+          0% {
+            transform: translateX(0);
+          }
+          100% {
+            transform: translateX(-50%);
+          }
+        }
+        .animate-infinite-scroll {
+          animation: infiniteScroll 30s linear infinite;
+        }
+        .animate-infinite-scroll:hover {
+          animation-play-state: paused;
+        }
+      `}</style>
     </div>
   );
 }
@@ -281,14 +230,12 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
   const [playerReady, setPlayerReady] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<Plyr | null>(null);
-  const userInteractedRef = useRef(false);
 
   // Reset and fetch when url changes
   useEffect(() => {
     setVideoSrc(null);
     setError(false);
     setPlayerReady(false);
-    userInteractedRef.current = false;
     if (!url) return;
 
     const ytId = getYouTubeId(url);
