@@ -37,8 +37,8 @@ function ArticleByIdPage() {
     const myReq = ++reqId.current;
     setTranslating(true);
     Promise.all([
-      translateText(article.title, lang, SOURCE_LANG),
-      translateText(article.content, lang, SOURCE_LANG),
+      translateText(article.title, lang),
+      translateText(article.content, lang),
     ])
       .then(([tTitle, tContent]) => {
         if (reqId.current === myReq) setAutoT({ title: tTitle, content: tContent });
