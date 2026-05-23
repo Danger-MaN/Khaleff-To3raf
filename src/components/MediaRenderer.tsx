@@ -1,105 +1,96 @@
-interface Props { url?: string; alt?: string }
+"use client";
+import { useState, useEffect } from "react";
 
 function getYouTubeId(url: string): string | null {
-  const patterns = [
-    /youtu\.be\/([a-zA-Z0-9_-]{11})/,
-    /youtube\.com\/watch\?v=([a-zA-Z0-9_-]{11})/,
-    /youtube\.com\/embed\/([a-zA-Z0-9_-]{11})/,
-    /youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/,
-  ];
-  for (const p of patterns) {
-    const m = url.match(p);
-    if (m) return m[1];
-  }
-  return null;
+  // ... كما هي
 }
 
-function getStreamtapeId(url: string): string | null {
-  // يدعم روابط streamtape بأنماط متعددة:
-  // https://streamtape.com/e/ID
-  // https://streamtape.com/embed/ID
-  // https://streamtape.com/v/ID
-  // https://streamtape.com/video/ID
-  // وأيضًا https://www.streamtape.com/...
-  const patterns = [
-    /streamtape\.com\/(e|embed|v|video)\/([a-zA-Z0-9_-]+)/,
-    /streamtape\.com\/([a-zA-Z0-9_-]+)(?:\?|$)/,
-  ];
-  for (const p of patterns) {
-    const m = url.match(p);
-    if (m) {
-      // المجموعة الأخيرة هي معرف الفيديو
-      let id = m[m.length - 1];
-      // استثناء إذا كان المقطع الأول هو 'e' أو 'embed' أو 'v' أو 'video'
-      if (id === 'e' || id === 'embed' || id === 'v' || id === 'video') continue;
-      if (id && id.length > 5) return id;
-    }
-  }
-  return null;
+function isStreamTapeUrl(url: string): boolean {
+  return /streamtape\.com/i.test(url);
 }
 
-export function MediaRenderer({ url, alt = "" }: Props) {
+function isTeraboxUrl(url: string): boolean {
+  return /(terabox|1024terabox|teraboxapp|dubox|4funbox)\./i.test(url);
+}
+
+async function getProxiedVideoUrl(shareUrl: string, platform: 'terabox' | 'streamtape'): Promise<string | null> {
+  try {
+    const functionName = platform === 'streamtape' ? 'streamtape' : 'terabox';
+    const res = await fetch(`/.netlify/functions/${functionName}?url=${encodeURIComponent(shareUrl)}`);
+    const data = await res.json();
+    if (!data.success) return null;
+    return `/.netlify/functions/${functionName}?video=1&url=${encodeURIComponent(shareUrl)}`;
+  } catch (err) {
+    console.error(err);
+    return null;
+  }
+}
+
+export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string }) {
   if (!url) return null;
 
-  const yt = getYouTubeId(url);
-  if (yt) {
+  // يوتيوب
+  const ytId = getYouTubeId(url);
+  if (ytId) {
     return (
-      <div className="relative w-full overflow-hidden rounded-lg shadow-mystic border border-gold/30" style={{ aspectRatio: "16/9" }}>
-        <iframe
-          src={`https://www.youtube.com/embed/${yt}`}
-          title="YouTube video"
-          className="absolute inset-0 h-full w-full"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-          allowFullScreen
-        />
+      <div style={{ aspectRatio: "16/9" }} className="relative w-full rounded-lg border border-gold/30 overflow-hidden">
+        <iframe src={`https://www.youtube.com/embed/${ytId}`} className="absolute inset-0 w-full h-full" allowFullScreen />
       </div>
     );
   }
 
-  const st = getStreamtapeId(url);
-  if (st) {
-    const embedSrc = `https://streamtape.com/e/${st}`;
+  // StreamTape
+  if (isStreamTapeUrl(url)) {
+    const [videoSrc, setVideoSrc] = useState<string | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(false);
+
+    useEffect(() => {
+      let active = true;
+      setLoading(true);
+      setError(false);
+      getProxiedVideoUrl(url, 'streamtape')
+        .then(src => {
+          if (!active) return;
+          if (src) setVideoSrc(src);
+          else setError(true);
+          setLoading(false);
+        })
+        .catch(() => {
+          if (active) setError(true);
+          setLoading(false);
+        });
+      return () => { active = false; };
+    }, [url]);
+
+    if (loading) return <div className="p-8 text-center">جاري تجهيز الفيديو...</div>;
+    if (error || !videoSrc) {
+      return (
+        <div className="p-8 text-center text-red-400">
+          لا يمكن عرض الفيديو. <a href={url} target="_blank" rel="noopener noreferrer">فتح الرابط ↗</a>
+        </div>
+      );
+    }
     return (
-      <div className="relative w-full overflow-hidden rounded-lg shadow-mystic border border-gold/30 bg-black" style={{ aspectRatio: "16/9" }}>
-        <iframe
-          src={embedSrc}
-          title="Streamtape video"
-          className="absolute inset-0 h-full w-full"
-          allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
-          allowFullScreen
-          referrerPolicy="no-referrer"
-        />
-        <a
-          href={url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="absolute bottom-2 end-2 text-[10px] uppercase tracking-widest px-2 py-1 rounded bg-background/70 text-gold border border-gold/30 hover:bg-background"
-        >
-          Streamtape ↗
-        </a>
-      </div>
+      <video key={videoSrc} controls className="w-full rounded-lg border border-gold/30 bg-black" style={{ aspectRatio: "16/9" }}>
+        <source src={videoSrc} type="video/mp4" />
+      </video>
     );
   }
 
-  if (/\.(mp4|webm|ogg|mov)(\?|$)/i.test(url)) {
-    return (
-      <video
-        src={url}
-        controls
-        className="w-full rounded-lg shadow-mystic border border-gold/30 bg-black"
-      />
-    );
+  // Terabox (نفس الكود السابق)
+  if (isTeraboxUrl(url)) {
+    // ... الكود السابق
   }
 
-  if (/\.(jpe?g|png|webp|gif|avif|svg)(\?|$)/i.test(url) || /^https?:\/\//.test(url)) {
-    return (
-      <img
-        src={url}
-        alt={alt}
-        loading="lazy"
-        className="w-full rounded-lg shadow-mystic border border-gold/30 object-cover"
-      />
-    );
+  // فيديو مباشر
+  if (/\.(mp4|webm|mov|ogg)/i.test(url)) {
+    return <video controls className="w-full" style={{ aspectRatio: "16/9" }}><source src={url} /></video>;
+  }
+
+  // صورة
+  if (/\.(jpg|jpeg|png|gif|webp|avif)/i.test(url)) {
+    return <img src={url} alt={alt} className="w-full rounded-lg" />;
   }
 
   return null;
