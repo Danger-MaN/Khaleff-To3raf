@@ -14,6 +14,7 @@ import { Plus, Pencil, Trash2, LogOut, Lock, X } from "lucide-react";
 export const Route = createFileRoute("/admin")({ component: AdminPage });
 
 const ADMIN_PASSWORD = "khaleff2025";
+
 const AUTH_KEY = "kt_admin_auth";
 
 function AdminPage() {
