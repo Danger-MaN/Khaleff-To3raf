@@ -1,6 +1,3 @@
-// netlify/functions/terabox.js
-// حل مستقل تماماً باستخدام مفتاح الكوكيز فقط - تم تحديث طريقة الاستخراج
-
 exports.handler = async (event) => {
   const headers = {
     'Access-Control-Allow-Origin': '*',
