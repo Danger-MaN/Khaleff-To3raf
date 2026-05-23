@@ -46,7 +46,7 @@ interface ThumbnailStripProps {
   isVisible?: boolean;
 }
 
-const SEEK_INTERVAL_MS = 1250;
+const SEEK_INTERVAL_MS = 1250; // 3 ثوانٍ ثابتة بين المشاهد
 const THUMBNAIL_COUNT = 10;
 
 function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStripProps) {
@@ -56,6 +56,7 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   const [activeIndex, setActiveIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
   
+  // Refs لضمان ثبات المؤقت
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const isPlayingRef = useRef(isPlaying);
   const activeIndexRef = useRef(activeIndex);
@@ -64,11 +65,24 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   
   const canvasRef = useRef<HTMLCanvasElement>(document.createElement('canvas'));
 
-  useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
-  useEffect(() => { activeIndexRef.current = activeIndex; }, [activeIndex]);
-  useEffect(() => { thumbnailsLengthRef.current = thumbnails.length; }, [thumbnails]);
-  useEffect(() => { durationRef.current = duration; }, [duration]);
+  // مزامنة refs مع القيم الحالية
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
+  
+  useEffect(() => {
+    activeIndexRef.current = activeIndex;
+  }, [activeIndex]);
+  
+  useEffect(() => {
+    thumbnailsLengthRef.current = thumbnails.length;
+  }, [thumbnails]);
+  
+  useEffect(() => {
+    durationRef.current = duration;
+  }, [duration]);
 
+  // دالة التقدم إلى المشهد التالي (تعتمد على refs فقط)
   const goToNextThumbnail = useCallback(() => {
     const total = thumbnailsLengthRef.current;
     if (total === 0) return;
@@ -78,25 +92,44 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
     setActiveIndex(newIndex);
   }, []);
 
+  // بدء المؤقت الثابت (مرة واحدة فقط بعد تحميل اللقطات)
   useEffect(() => {
     if (loading || thumbnails.length === 0) return;
+    
+    // إيقاف أي مؤقت سابق
     if (intervalRef.current) clearInterval(intervalRef.current);
+    
+    // إنشاء مؤقت جديد بفاصل ثابت
     intervalRef.current = setInterval(() => {
       if (isPlayingRef.current) {
         goToNextThumbnail();
       }
     }, SEEK_INTERVAL_MS);
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+    
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
   }, [loading, thumbnails.length, goToNextThumbnail]);
 
+  // استماع لحدث play على الفيديو لإيقاف التلقائي بشكل مطلق
   useEffect(() => {
     const video = videoElement;
     if (!video) return;
-    const handlePlay = () => { if (isPlayingRef.current) setIsPlaying(false); };
+    
+    const handlePlay = () => {
+      // إيقاف التلقائي إذا كان شغالاً
+      if (isPlayingRef.current) {
+        setIsPlaying(false);
+      }
+    };
+    
     video.addEventListener('play', handlePlay);
-    return () => video.removeEventListener('play', handlePlay);
+    return () => {
+      video.removeEventListener('play', handlePlay);
+    };
   }, [videoElement]);
 
+  // عند تغيير activeIndex، نطلب التمرير في الفيديو
   useEffect(() => {
     if (durationRef.current > 0 && thumbnails.length > 0) {
       const step = durationRef.current / THUMBNAIL_COUNT;
@@ -105,6 +138,7 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
     }
   }, [activeIndex, thumbnails.length, onSeek]);
 
+  // توليد اللقطات (نفس السابق)
   const generateThumbnails = useCallback(async () => {
     if (!videoElement) return;
     setLoading(true);
@@ -140,17 +174,20 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
     setLoading(false);
   }, [videoElement]);
 
+  // إعادة التشغيل: تعيين المشهد الأول وتفعيل التلقائي
   const restartTimer = useCallback(() => {
     setActiveIndex(0);
     setIsPlaying(true);
   }, []);
 
+  // النقر اليدوي على مشهد: يوقف التلقائي ويذهب إلى التوقيت
   const handleThumbnailClick = useCallback((index: number, time: number) => {
     setIsPlaying(false);
     setActiveIndex(index);
     onSeek(time);
   }, [onSeek]);
 
+  // بدء التوليد عند تحميل الفيديو
   useEffect(() => {
     if (!videoElement) return;
     setIsPlaying(true);
@@ -273,6 +310,7 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
         controls: ["play-large", "play", "progress", "current-time", "duration", "mute", "captions", "settings", "pip", "airplay", "fullscreen"],
         disableContextMenu: true,
         seekTime: 10,
+        quality: { default: 720, options: [1080, 720, 480, 360], forced: true },
         speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
         download: false,
         storage: { enabled: true, key: 'plyr' },
