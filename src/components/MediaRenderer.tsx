@@ -40,7 +40,7 @@ async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null>
   }
 }
 
-// ------------------- مكون عرض اللقطات (ثابت مع مؤقت دائري) -------------------
+// ------------------- مكون عرض اللقطات (مع مؤقت دائري وإعادة تشغيل من البداية) -------------------
 interface ThumbnailStripProps {
   videoElement: HTMLVideoElement | null;
   onSeek: (time: number) => void;
@@ -54,9 +54,16 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   const [activeIndex, setActiveIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const isPlayingRef = useRef(isPlaying);
   const canvasRef = useRef<HTMLCanvasElement>(document.createElement('canvas'));
   const THUMBNAIL_COUNT = 10;
 
+  // تحديث ref عند تغير isPlaying
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
+
+  // توليد اللقطات من الفيديو
   const generateThumbnails = useCallback(async () => {
     if (!videoElement) return;
     
@@ -95,14 +102,14 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
 
     setThumbnails(thumbs);
     setLoading(false);
-  }, [videoElement]);
+  }, [videoElement, THUMBNAIL_COUNT]);
 
-  // بدء المؤقت الدائري (يتحرك الإطار الذهبي فقط)
+  // بدء المؤتمر الدائري (يتحرك الإطار الذهبي بشكل تلقائي ويعيد الدوران من البداية)
   const startTimer = useCallback(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
     
     intervalRef.current = setInterval(() => {
-      if (!isPlaying) return;
+      if (!isPlayingRef.current) return;
       
       setActiveIndex(prev => {
         let next = prev + 1;
@@ -112,7 +119,7 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
         return next;
       });
     }, 3000); // كل 3 ثوانٍ ينتقل إلى المشهد التالي
-  }, [isPlaying]);
+  }, [THUMBNAIL_COUNT]);
 
   // إيقاف المؤقت
   const stopTimer = useCallback(() => {
@@ -123,29 +130,33 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
     }
   }, []);
 
-  // إعادة تشغيل المؤقت
+  // إعادة تشغيل المؤقت من البداية (إعادة تعيين activeIndex إلى 0)
   const restartTimer = useCallback(() => {
-    setIsPlaying(true);
-    startTimer();
-  }, [startTimer]);
+    setActiveIndex(0);      // العودة إلى أول مشهد
+    setIsPlaying(true);     // التأكد من أن التشغيل مفعّل
+    // إعادة بدء المؤقت (سيتم استدعاء startTimer في useEffect التالي)
+    // لكننا نريد بدء المؤقت فوراً إذا كان اللقطات جاهزة
+    if (thumbnails.length > 0 && !loading) {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      startTimer();
+    }
+  }, [thumbnails.length, loading, startTimer]);
 
   // عند النقر على مشهد معين
   const handleThumbnailClick = useCallback((index: number, time: number) => {
-    stopTimer();
+    stopTimer();          // إيقاف التلقائي
     setActiveIndex(index);
     onSeek(time);
   }, [stopTimer, onSeek]);
 
-  // بدء المؤقت عند تحميل اللقطات
+  // بدء المؤقت عند تحميل اللقطات (أو عند تغيير حالة التحميل)
   useEffect(() => {
     if (!loading && thumbnails.length > 0) {
       startTimer();
     }
     
     return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
+      if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, [loading, thumbnails, startTimer]);
 
