@@ -40,7 +40,7 @@ async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null>
   }
 }
 
-// ------------------- مكون عرض اللقطات (الحركة الدائرية باستخدام CSS) -------------------
+// ------------------- مكون عرض اللقطات (السلايدر التلقائي) -------------------
 interface ThumbnailStripProps {
   videoElement: HTMLVideoElement | null;
   onSeek: (time: number) => void;
@@ -51,8 +51,10 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   const [thumbnails, setThumbnails] = useState<string[]>([]);
   const [duration, setDuration] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [isAnimating, setIsAnimating] = useState(true);
+  const [isAutoSliding, setIsAutoSliding] = useState(true);
+  const [currentIndex, setCurrentIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(document.createElement('canvas'));
   const THUMBNAIL_COUNT = 10;
 
@@ -96,18 +98,89 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
     setLoading(false);
   }, [videoElement]);
 
-  // إيقاف الحركة عند تفاعل المستخدم
-  const stopAnimation = useCallback(() => {
-    setIsAnimating(false);
+  // بدء التمرير التلقائي (كل 3 ثوانٍ ننتقل للمشهد التالي)
+  const startAutoSlide = useCallback(() => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    
+    intervalRef.current = setInterval(() => {
+      if (!isAutoSliding) return;
+      
+      setCurrentIndex(prev => {
+        let next = prev + 1;
+        if (next >= THUMBNAIL_COUNT) {
+          next = 0; // العودة إلى البداية - حلقة لا نهائية
+        }
+        
+        // تمرير الحاوية إلى المشهد الجديد
+        if (containerRef.current) {
+          const scrollAmount = (next * (120 + 8)); // عرض كل مشهد (120px) + مسافة (8px)
+          containerRef.current.scrollTo({
+            left: scrollAmount,
+            behavior: 'smooth'
+          });
+        }
+        
+        return next;
+      });
+    }, 3000); // كل 3 ثوانٍ
+  }, [isAutoSliding]);
+
+  // إيقاف التمرير التلقائي
+  const stopAutoSlide = useCallback(() => {
+    setIsAutoSliding(false);
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
   }, []);
 
-  // إعادة تشغيل الحركة
-  const startAnimation = useCallback(() => {
-    setIsAnimating(true);
-  }, []);
+  // إعادة تشغيل التمرير التلقائي
+  const restartAutoSlide = useCallback(() => {
+    setIsAutoSliding(true);
+    startAutoSlide();
+  }, [startAutoSlide]);
 
+  // مراقبة تفاعل المستخدم مع شريط المشاهد
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    
+    const handleUserInteraction = () => {
+      if (isAutoSliding) {
+        stopAutoSlide();
+      }
+    };
+    
+    container.addEventListener('wheel', handleUserInteraction);
+    container.addEventListener('touchstart', handleUserInteraction);
+    container.addEventListener('mousedown', handleUserInteraction);
+    
+    return () => {
+      container.removeEventListener('wheel', handleUserInteraction);
+      container.removeEventListener('touchstart', handleUserInteraction);
+      container.removeEventListener('mousedown', handleUserInteraction);
+    };
+  }, [isAutoSliding, stopAutoSlide]);
+
+  // بدء التمرير التلقائي عند تحميل اللقطات
+  useEffect(() => {
+    if (!loading && thumbnails.length > 0) {
+      startAutoSlide();
+    }
+    
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
+  }, [loading, thumbnails, startAutoSlide]);
+
+  // إعادة التوليد عند تغيير الفيديو
   useEffect(() => {
     if (!videoElement) return;
+    
+    setIsAutoSliding(true);
+    setCurrentIndex(0);
     
     if (videoElement.readyState >= 2) {
       generateThumbnails();
@@ -135,89 +208,67 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // تكرار اللقطات مرتين لإنشاء تأثير دائري لا نهائي
-  const duplicatedThumbnails = [...thumbnails, ...thumbnails, ...thumbnails, ...thumbnails, ...thumbnails];
-
   return (
     <div className="mt-3 w-full">
       {/* شريط الحالة */}
-      <div className="flex justify-between items-center mb-1 px-1">
-        <span className="text-[10px] text-white/50">
-          {isAnimating ? '🔄 تمرير تلقائي دائري (لا يتوقف أبداً)' : '⏸️ توقف - انتظر تفاعلك مع الفيديو'}
+      <div className="flex justify-between items-center mb-2 px-1">
+        <span className="text-[11px] text-white/60">
+          {isAutoSliding ? '🎬 تمرير تلقائي (يتكرر للأبد)' : '⏸️ توقف مؤقت'}
         </span>
-        {!isAnimating && (
-          <button
-            onClick={startAnimation}
-            className="text-[10px] text-gold/70 hover:text-gold transition-colors"
-          >
-            إعادة تشغيل التمرير التلقائي
-          </button>
-        )}
-      </div>
-      
-      {/* شريط المشاهد المتحرك الدائري - باستخدام CSS animation */}
-      <div 
-        className="relative w-full overflow-hidden rounded-lg"
-        onMouseEnter={stopAnimation}
-        onTouchStart={stopAnimation}
-      >
-        <div
-          className={`flex gap-2 ${isAnimating ? 'animate-infinite-scroll' : ''}`}
-          style={{
-            width: 'fit-content',
-          }}
-        >
-          {duplicatedThumbnails.map((thumb, idx) => {
-            const originalIdx = idx % thumbnails.length;
-            const time = (duration / thumbnails.length) * originalIdx;
-            const percentage = Math.round((time / duration) * 100);
-            return (
-              <button
-                key={`${originalIdx}-${idx}`}
-                onClick={() => {
-                  stopAnimation();
-                  onSeek(time);
-                }}
-                className="flex flex-col items-center gap-1 transition-all hover:scale-105 focus:outline-none group flex-shrink-0"
-                title={`انتقل إلى ${formatTime(time)} (${percentage}%)`}
-              >
-                <div className="relative">
-                  <img
-                    src={thumb}
-                    alt={`مشهد ${originalIdx + 1}`}
-                    className="w-28 h-16 object-cover rounded-lg border border-gold/30 group-hover:border-gold transition-colors"
-                    loading="lazy"
-                  />
-                  <div className="absolute bottom-1 right-1 bg-black/70 text-[10px] px-1 rounded text-gold">
-                    {percentage}%
-                  </div>
-                </div>
-                <span className="text-[10px] text-white/70 group-hover:text-gold">
-                  {formatTime(time)}
-                </span>
-              </button>
-            );
-          })}
+        <div className="flex gap-2">
+          {!isAutoSliding && (
+            <button
+              onClick={restartAutoSlide}
+              className="text-[11px] text-gold/80 hover:text-gold transition-colors"
+            >
+              ▶ إعادة التشغيل
+            </button>
+          )}
+          <span className="text-[11px] text-white/40">
+            {currentIndex + 1} / {THUMBNAIL_COUNT}
+          </span>
         </div>
       </div>
-
-      {/* CSS للحركة الدائرية اللانهائية */}
-      <style jsx>{`
-        @keyframes infiniteScroll {
-          0% {
-            transform: translateX(0);
-          }
-          100% {
-            transform: translateX(-50%);
-          }
-        }
-        .animate-infinite-scroll {
-          animation: infiniteScroll 30s linear infinite;
-        }
-        .animate-infinite-scroll:hover {
-          animation-play-state: paused;
-        }
-      `}</style>
+      
+      {/* شريط المشاهد - مع overflow-x auto للسماح بالتمرير اليدوي */}
+      <div
+        ref={containerRef}
+        className="flex gap-2 overflow-x-auto scrollbar-thin scrollbar-track-gray-800 scrollbar-thumb-gold/50 pb-2 cursor-grab active:cursor-grabbing"
+        style={{ scrollBehavior: 'smooth' }}
+      >
+        {thumbnails.map((thumb, idx) => {
+          const time = (duration / THUMBNAIL_COUNT) * idx;
+          const percentage = Math.round((time / duration) * 100);
+          return (
+            <button
+              key={idx}
+              onClick={() => {
+                stopAutoSlide();
+                onSeek(time);
+              }}
+              className={`flex flex-col items-center gap-1 transition-all hover:scale-105 focus:outline-none group flex-shrink-0 ${
+                currentIndex === idx ? 'ring-2 ring-gold rounded-lg' : ''
+              }`}
+              title={`انتقل إلى ${formatTime(time)} (${percentage}%)`}
+            >
+              <div className="relative">
+                <img
+                  src={thumb}
+                  alt={`مشهد ${idx + 1}`}
+                  className="w-28 h-16 object-cover rounded-lg border border-gold/30 group-hover:border-gold transition-colors"
+                  loading="lazy"
+                />
+                <div className="absolute bottom-1 right-1 bg-black/70 text-[10px] px-1 rounded text-gold">
+                  {percentage}%
+                </div>
+              </div>
+              <span className="text-[10px] text-white/70 group-hover:text-gold">
+                {formatTime(time)}
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -231,7 +282,6 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<Plyr | null>(null);
 
-  // Reset and fetch when url changes
   useEffect(() => {
     setVideoSrc(null);
     setError(false);
@@ -275,7 +325,6 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     setError(true);
   }, [url]);
 
-  // Initialize Plyr when video source is ready
   useEffect(() => {
     if (!videoRef.current || !videoSrc || videoSrc.includes('youtube')) return;
     if (playerRef.current) playerRef.current.destroy();
@@ -285,25 +334,12 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
       
       playerRef.current = new Plyr(videoRef.current, {
         controls: [
-          "play-large",
-          "play",
-          "progress",
-          "current-time",
-          "duration",
-          "mute",
-          "captions",
-          "settings",
-          "pip",
-          "airplay",
-          "fullscreen",
+          "play-large", "play", "progress", "current-time", "duration",
+          "mute", "captions", "settings", "pip", "airplay", "fullscreen",
         ],
         disableContextMenu: true,
         seekTime: 10,
-        quality: {
-          default: 720,
-          options: [1080, 720, 480, 360],
-          forced: true,
-        },
+        quality: { default: 720, options: [1080, 720, 480, 360], forced: true },
         speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
         download: false,
         storage: { enabled: true, key: 'plyr' },
@@ -325,7 +361,6 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     };
   }, [videoSrc]);
 
-  // دالة للقفز إلى وقت معين في الفيديو
   const handleSeek = (time: number) => {
     if (videoRef.current) {
       videoRef.current.currentTime = time;
@@ -335,12 +370,10 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     }
   };
 
-  // Loading state
   if (loading) {
     return <div className="p-8 text-center text-gold">جاري تجهيز الفيديو...</div>;
   }
 
-  // Error state
   if (error || !videoSrc) {
     return (
       <div className="p-8 text-center text-red-400">
@@ -352,7 +385,6 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     );
   }
 
-  // YouTube
   if (videoSrc.includes("youtube.com/embed")) {
     return (
       <div style={{ aspectRatio: "16/9" }} className="relative w-full rounded-lg border border-gold/30 overflow-hidden">
@@ -366,12 +398,10 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     );
   }
 
-  // Images
   if (/\.(jpg|jpeg|png|gif|webp|avif)/i.test(videoSrc)) {
     return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/30" />;
   }
 
-  // Video with Plyr and Auto-scrolling Thumbnail Strip
   return (
     <div className="w-full rounded-lg border border-gold/30 bg-black overflow-hidden">
       <div className="p-2">
@@ -386,7 +416,6 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
           متصفحك لا يدعم تشغيل الفيديو.
         </video>
         
-        {/* شريط المشاهد المتحرك الدائري */}
         {playerReady && (
           <ThumbnailStrip
             videoElement={videoRef.current}
