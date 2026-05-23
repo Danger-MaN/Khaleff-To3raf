@@ -27,14 +27,18 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
   if (ytId) {
     return (
       <div style={{ aspectRatio: "16/9" }} className="relative w-full rounded-lg border border-gold/30 overflow-hidden">
-        <iframe src={`https://www.youtube.com/embed/${ytId}`} className="absolute inset-0 w-full h-full" allowFullScreen />
+        <iframe
+          src={`https://www.youtube.com/embed/${ytId}`}
+          className="absolute inset-0 w-full h-full"
+          allowFullScreen
+        />
       </div>
     );
   }
 
-  // تيرابوكس - عرض الصفحة كاملة داخل iframe
+  // تيرابوكس - عرض الصفحة داخل iframe
   if (isTeraboxUrl(url)) {
-    const embedUrl = `/.netlify/functions/terabox-embed?url=${encodeURIComponent(url)}`;
+    const embedUrl = `/.netlify/functions/terabox?embed=1&url=${encodeURIComponent(url)}`;
     return (
       <div style={{ aspectRatio: "16/9" }} className="relative w-full rounded-lg border border-gold/30 overflow-hidden bg-black">
         <iframe
@@ -48,7 +52,7 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
           href={url}
           target="_blank"
           rel="noopener noreferrer"
-          className="absolute bottom-2 right-2 text-xs px-2 py-1 rounded bg-black/70 text-white z-10"
+          className="absolute bottom-2 right-2 text-xs px-2 py-1 rounded bg-black/70 text-white z-10 hover:bg-black/90"
         >
           فتح في Terabox ↗
         </a>
