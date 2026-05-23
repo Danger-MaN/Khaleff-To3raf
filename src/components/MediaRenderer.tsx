@@ -100,17 +100,17 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
       
       playerRef.current = new Plyr(videoRef.current, {
         controls: [
-            "play-large",   // زر التشغيل الكبير (في منتصف الشاشة)
-            "play",         // زر التشغيل الصغير
-            "progress",     // شريط التقدم (Seeking)
-            "current-time", // الوقت الحالي
-            "duration",     // المدة الكلية
-            "mute",         // زر كتم الصوت (بدون مؤشر مستوى الصوت)
-            "captions",     // الترجمة (إذا وجدت)
-            "settings",     // إعدادات الجودة والسرعة
-            "pip",          // Picture-in-Picture
-            "airplay",      // AirPlay
-            "fullscreen",   // ملء الشاشة
+          "play-large",
+          "play",
+          "progress",
+          "current-time",
+          "duration",
+          "mute",
+          "captions",
+          "settings",
+          "pip",
+          "airplay",
+          "fullscreen",
         ],
         disableContextMenu: true,
         seekTime: 10,
@@ -121,10 +121,11 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
         },
         speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
         download: false,
+        // تحسين التخزين المؤقت
+        storage: { enabled: true, key: 'plyr' },
       });
     };
 
-    // تأكد من تحميل بيانات الفيديو بالكامل لتجنب مشاكل التقديم
     if (videoRef.current.readyState >= 1) {
       initializePlayer();
     } else {
@@ -181,11 +182,9 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
         className="plyr-react plyr w-full"
         playsInline
         crossOrigin="anonymous"
-        controls // Fallback للمتصفحات القديمة
+        preload="metadata"
       >
         <source src={videoSrc} type="video/mp4" />
-        {/* أضف ملف الفصول هنا إذا كان موجوداً */}
-        {/* <track kind="chapters" src="/chapters.vtt" default /> */}
         متصفحك لا يدعم تشغيل الفيديو.
       </video>
     </div>
