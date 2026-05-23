@@ -100,8 +100,17 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
       
       playerRef.current = new Plyr(videoRef.current, {
         controls: [
-          "play-large", "play", "progress", "current-time", "duration",
-          "mute", "volume", "captions", "settings", "pip", "airplay", "fullscreen",
+            "play-large",   // زر التشغيل الكبير (في منتصف الشاشة)
+            "play",         // زر التشغيل الصغير
+            "progress",     // شريط التقدم (Seeking)
+            "current-time", // الوقت الحالي
+            "duration",     // المدة الكلية
+            "mute",         // زر كتم الصوت (بدون مؤشر مستوى الصوت)
+            "captions",     // الترجمة (إذا وجدت)
+            "settings",     // إعدادات الجودة والسرعة
+            "pip",          // Picture-in-Picture
+            "airplay",      // AirPlay
+            "fullscreen",   // ملء الشاشة
         ],
         disableContextMenu: true,
         seekTime: 10,
