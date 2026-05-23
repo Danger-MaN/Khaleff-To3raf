@@ -1,6 +1,3 @@
-// netlify/functions/streamtape.js
-// يقوم بتحويل رابط Streamtape إلى رابط مباشر يدعم التقديم والتأخير
-
 exports.handler = async (event) => {
   const headers = {
     'Access-Control-Allow-Origin': '*',
