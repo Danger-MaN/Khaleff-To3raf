@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import Plyr from "plyr";
 import "plyr/dist/plyr.css";
+import PlyrAds from "plyr-ads";
 
 // ------------------- دوال مساعدة -------------------
 function getYouTubeId(url: string): string | null {
@@ -56,7 +57,6 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   const [activeIndex, setActiveIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
   
-  // Refs لضمان ثبات المؤقت
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const isPlayingRef = useRef(isPlaying);
   const activeIndexRef = useRef(activeIndex);
@@ -65,24 +65,11 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   
   const canvasRef = useRef<HTMLCanvasElement>(document.createElement('canvas'));
 
-  // مزامنة refs مع القيم الحالية
-  useEffect(() => {
-    isPlayingRef.current = isPlaying;
-  }, [isPlaying]);
-  
-  useEffect(() => {
-    activeIndexRef.current = activeIndex;
-  }, [activeIndex]);
-  
-  useEffect(() => {
-    thumbnailsLengthRef.current = thumbnails.length;
-  }, [thumbnails]);
-  
-  useEffect(() => {
-    durationRef.current = duration;
-  }, [duration]);
+  useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
+  useEffect(() => { activeIndexRef.current = activeIndex; }, [activeIndex]);
+  useEffect(() => { thumbnailsLengthRef.current = thumbnails.length; }, [thumbnails]);
+  useEffect(() => { durationRef.current = duration; }, [duration]);
 
-  // دالة التقدم إلى المشهد التالي (تعتمد على refs فقط)
   const goToNextThumbnail = useCallback(() => {
     const total = thumbnailsLengthRef.current;
     if (total === 0) return;
@@ -92,44 +79,25 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
     setActiveIndex(newIndex);
   }, []);
 
-  // بدء المؤقت الثابت (مرة واحدة فقط بعد تحميل اللقطات)
   useEffect(() => {
     if (loading || thumbnails.length === 0) return;
-    
-    // إيقاف أي مؤقت سابق
     if (intervalRef.current) clearInterval(intervalRef.current);
-    
-    // إنشاء مؤقت جديد بفاصل ثابت
     intervalRef.current = setInterval(() => {
       if (isPlayingRef.current) {
         goToNextThumbnail();
       }
     }, SEEK_INTERVAL_MS);
-    
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [loading, thumbnails.length, goToNextThumbnail]);
 
-  // استماع لحدث play على الفيديو لإيقاف التلقائي بشكل مطلق
   useEffect(() => {
     const video = videoElement;
     if (!video) return;
-    
-    const handlePlay = () => {
-      // إيقاف التلقائي إذا كان شغالاً
-      if (isPlayingRef.current) {
-        setIsPlaying(false);
-      }
-    };
-    
+    const handlePlay = () => { if (isPlayingRef.current) setIsPlaying(false); };
     video.addEventListener('play', handlePlay);
-    return () => {
-      video.removeEventListener('play', handlePlay);
-    };
+    return () => video.removeEventListener('play', handlePlay);
   }, [videoElement]);
 
-  // عند تغيير activeIndex، نطلب التمرير في الفيديو
   useEffect(() => {
     if (durationRef.current > 0 && thumbnails.length > 0) {
       const step = durationRef.current / THUMBNAIL_COUNT;
@@ -138,7 +106,6 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
     }
   }, [activeIndex, thumbnails.length, onSeek]);
 
-  // توليد اللقطات (نفس السابق)
   const generateThumbnails = useCallback(async () => {
     if (!videoElement) return;
     setLoading(true);
@@ -174,20 +141,17 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
     setLoading(false);
   }, [videoElement]);
 
-  // إعادة التشغيل: تعيين المشهد الأول وتفعيل التلقائي
   const restartTimer = useCallback(() => {
     setActiveIndex(0);
     setIsPlaying(true);
   }, []);
 
-  // النقر اليدوي على مشهد: يوقف التلقائي ويذهب إلى التوقيت
   const handleThumbnailClick = useCallback((index: number, time: number) => {
     setIsPlaying(false);
     setActiveIndex(index);
     onSeek(time);
   }, [onSeek]);
 
-  // بدء التوليد عند تحميل الفيديو
   useEffect(() => {
     if (!videoElement) return;
     setIsPlaying(true);
@@ -248,6 +212,11 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   );
 }
 
+// ------------------- رابط الإعلان التجريبي (VAST Tag) -------------------
+// هذا رابط تجريبي من Google IMA SDK للاختبار فقط
+// ستستبدله لاحقاً برابط الإعلان الحقيقي من شبكة إعلانات
+const DEMO_VAST_TAG = "https://pubads.g.doubleclick.net/gampad/ads?iu=/21775744923/external/vmap_ad_samples&sz=640x480&cust_params=sample_ar%3Dpreonly&ciu_szs=300x250&gdfp_req=1&ad_rule=1&output=vmap&unviewed_position_start=1&env=vp&impl=s&cmsid=496&vid=short_onecue&correlator=";
+
 // ------------------- المكون الرئيسي -------------------
 export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string }) {
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
@@ -256,6 +225,7 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
   const [playerReady, setPlayerReady] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<Plyr | null>(null);
+  const adsRef = useRef<PlyrAds | null>(null);
 
   useEffect(() => {
     setVideoSrc(null);
@@ -303,18 +273,32 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
   useEffect(() => {
     if (!videoRef.current || !videoSrc || videoSrc.includes('youtube')) return;
     if (playerRef.current) playerRef.current.destroy();
+    if (adsRef.current) adsRef.current.destroy();
 
     const initializePlayer = () => {
       if (!videoRef.current) return;
+      
       playerRef.current = new Plyr(videoRef.current, {
         controls: ["play-large", "play", "progress", "current-time", "duration", "mute", "captions", "settings", "pip", "airplay", "fullscreen"],
         disableContextMenu: true,
         seekTime: 10,
-        quality: { default: 720, options: [1080, 720, 480, 360], forced: true },
         speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
         download: false,
         storage: { enabled: true, key: 'plyr' },
       });
+
+      // تفعيل الإعلانات (Pre-roll Ad)
+      adsRef.current = new PlyrAds();
+      adsRef.current.setup(playerRef.current, {
+        adTagUrl: DEMO_VAST_TAG, // استبدل هذا برابط الإعلان الحقيقي
+        skipButton: {
+          enabled: true,
+          text: "⏩ تخطي الإعلان",
+          delay: 5, // يظهر زر التخطي بعد 5 ثوانٍ
+        },
+        adsEnabled: true,
+      });
+
       setPlayerReady(true);
     };
 
@@ -325,8 +309,14 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     }
 
     return () => {
-      playerRef.current?.destroy();
-      playerRef.current = null;
+      if (adsRef.current) {
+        adsRef.current.destroy();
+        adsRef.current = null;
+      }
+      if (playerRef.current) {
+        playerRef.current.destroy();
+        playerRef.current = null;
+      }
       setPlayerReady(false);
     };
   }, [videoSrc]);
