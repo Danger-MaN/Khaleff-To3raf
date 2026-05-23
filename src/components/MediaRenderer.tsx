@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
@@ -39,7 +40,7 @@ async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null>
   }
 }
 
-// ------------------- مكون عرض اللقطات (مع حل مشكلة التكرار والاتجاه) -------------------
+// ------------------- مكون عرض اللقطات -------------------
 interface ThumbnailStripProps {
   videoElement: HTMLVideoElement | null;
   onSeek: (time: number) => void;
@@ -52,11 +53,63 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   const [loading, setLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
-  const intervalIdRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // refs لتجنب إعادة إنشاء المؤقت
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const isPlayingRef = useRef(isPlaying);
+  const thumbnailsLengthRef = useRef(0);
+  const goToNextRef = useRef<(() => void) | null>(null);
+  
   const canvasRef = useRef<HTMLCanvasElement>(document.createElement('canvas'));
   const THUMBNAIL_COUNT = 10;
 
-  // توليد اللقطات (بدون تغيير)
+  // مزامنة الـ refs مع الحالة
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
+
+  useEffect(() => {
+    thumbnailsLengthRef.current = thumbnails.length;
+  }, [thumbnails]);
+
+  // دالة التقدم إلى المشهد التالي (تعتمد على ref للطول لتكون ثابتة)
+  const goToNextThumbnail = useCallback(() => {
+    setActiveIndex(prev => {
+      const total = thumbnailsLengthRef.current;
+      if (total === 0) return 0;
+      const next = prev + 1;
+      return next >= total ? 0 : next;
+    });
+  }, []);
+
+  // تخزين الدالة في ref لاستخدامها داخل المؤقت الثابت
+  useEffect(() => {
+    goToNextRef.current = goToNextThumbnail;
+  }, [goToNextThumbnail]);
+
+  // مؤقت واحد ثابت يبدأ عند تحميل اللقطات ويتوقف عند إلغاء التثبيت
+  useEffect(() => {
+    if (loading || thumbnails.length === 0) return;
+    
+    // إزالة أي مؤقت سابق
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    
+    // إنشاء مؤقت جديد
+    intervalRef.current = setInterval(() => {
+      if (isPlayingRef.current && goToNextRef.current) {
+        goToNextRef.current();
+      }
+    }, 3000);
+    
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [loading, thumbnails.length]); // يعاد إنشاؤه فقط عندما تتغير اللقطات (مرة واحدة)
+
+  // توليد اللقطات من الفيديو
   const generateThumbnails = useCallback(async () => {
     if (!videoElement) return;
     setLoading(true);
@@ -90,72 +143,26 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
     }
     setThumbnails(thumbs);
     setLoading(false);
-  }, [videoElement, THUMBNAIL_COUNT]);
+  }, [videoElement]);
 
-  // دالة التقدم إلى المشهد التالي (تستخدم في المؤقت)
-  const goToNextThumbnail = useCallback(() => {
-    setActiveIndex((prev) => {
-      const next = prev + 1;
-      if (next >= thumbnails.length) {
-        return 0; // العودة إلى البداية فوراً
-      }
-      return next;
-    });
-  }, [thumbnails.length]);
-
-  // بدء المؤقت (يتحرك للأمام فقط)
-  const startTimer = useCallback(() => {
-    if (intervalIdRef.current) clearInterval(intervalIdRef.current);
-    intervalIdRef.current = setInterval(() => {
-      if (isPlaying) {
-        goToNextThumbnail();
-      }
-    }, 3000);
-  }, [isPlaying, goToNextThumbnail]);
-
-  // إيقاف المؤقت
+  // إيقاف التحرك التلقائي
   const stopTimer = useCallback(() => {
     setIsPlaying(false);
-    if (intervalIdRef.current) {
-      clearInterval(intervalIdRef.current);
-      intervalIdRef.current = null;
-    }
   }, []);
 
-  // إعادة التشغيل من البداية (المشهد الأول)
+  // إعادة التشغيل من البداية
   const restartTimer = useCallback(() => {
-    setActiveIndex(0);       // إعادة الضبط إلى أول مشهد
-    setIsPlaying(true);
-    // إعادة تشغيل المؤقت بعد إعادة الضبط
-    if (intervalIdRef.current) clearInterval(intervalIdRef.current);
-    intervalIdRef.current = setInterval(() => {
-      // استخدام isPlaying الحالي (الذي أصبح true)
-      setActiveIndex((prev) => {
-        const next = prev + 1;
-        if (next >= thumbnails.length) {
-          return 0;
-        }
-        return next;
-      });
-    }, 3000);
-  }, [thumbnails.length]);
+    setActiveIndex(0);      // العودة إلى أول مشهد
+    setIsPlaying(true);     // تشغيل التلقائي مرة أخرى
+    // المؤقت سيستمر في العمل، و isPlayingRef سيصبح true الآن
+  }, []);
 
   // عند النقر على مشهد معين
   const handleThumbnailClick = useCallback((index: number, time: number) => {
-    stopTimer();          // يوقف التلقائي
+    stopTimer();
     setActiveIndex(index);
     onSeek(time);
   }, [stopTimer, onSeek]);
-
-  // بدء المؤقت تلقائياً عند تحميل اللقطات
-  useEffect(() => {
-    if (!loading && thumbnails.length > 0) {
-      startTimer();
-    }
-    return () => {
-      if (intervalIdRef.current) clearInterval(intervalIdRef.current);
-    };
-  }, [loading, thumbnails, startTimer]);
 
   // إعادة توليد اللقطات عند تغيير الفيديو
   useEffect(() => {
@@ -253,7 +260,7 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   );
 }
 
-// ------------------- المكون الرئيسي (بدون تغيير) -------------------
+// ------------------- المكون الرئيسي -------------------
 export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string }) {
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
