@@ -46,7 +46,7 @@ interface ThumbnailStripProps {
   isVisible?: boolean;
 }
 
-const SEEK_INTERVAL_MS = 3000; // 3 ثوانٍ بين المشاهد
+const SEEK_INTERVAL_MS = 2000; // 3 ثوانٍ ثابتة بين المشاهد
 const THUMBNAIL_COUNT = 10;
 
 function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStripProps) {
@@ -56,68 +56,70 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   const [activeIndex, setActiveIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
   
+  // Refs لضمان ثبات المؤقت
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const isPlayingRef = useRef(isPlaying);
+  const activeIndexRef = useRef(activeIndex);
   const thumbnailsLengthRef = useRef(0);
-  const goToNextRef = useRef<(() => void) | null>(null);
-  const videoElementRef = useRef(videoElement);
+  const durationRef = useRef(0);
   
   const canvasRef = useRef<HTMLCanvasElement>(document.createElement('canvas'));
 
-  // مزامنة refs
+  // مزامنة refs مع القيم الحالية
   useEffect(() => {
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
-
+  
+  useEffect(() => {
+    activeIndexRef.current = activeIndex;
+  }, [activeIndex]);
+  
   useEffect(() => {
     thumbnailsLengthRef.current = thumbnails.length;
   }, [thumbnails]);
-
+  
   useEffect(() => {
-    videoElementRef.current = videoElement;
-  }, [videoElement]);
-
-  const getTimeFromIndex = useCallback((index: number) => {
-    if (duration === 0) return 0;
-    const step = duration / THUMBNAIL_COUNT;
-    return step * index;
+    durationRef.current = duration;
   }, [duration]);
 
+  // دالة التقدم إلى المشهد التالي (تعتمد على refs فقط)
   const goToNextThumbnail = useCallback(() => {
-    setActiveIndex(prev => {
-      const total = thumbnailsLengthRef.current;
-      if (total === 0) return 0;
-      const next = prev + 1;
-      return next >= total ? 0 : next;
-    });
+    const total = thumbnailsLengthRef.current;
+    if (total === 0) return;
+    const current = activeIndexRef.current;
+    const next = current + 1;
+    const newIndex = next >= total ? 0 : next;
+    setActiveIndex(newIndex);
   }, []);
 
-  useEffect(() => {
-    goToNextRef.current = goToNextThumbnail;
-  }, [goToNextThumbnail]);
-
-  // بدء المؤقت (مرة واحدة بعد تحميل اللقطات)
+  // بدء المؤقت الثابت (مرة واحدة فقط بعد تحميل اللقطات)
   useEffect(() => {
     if (loading || thumbnails.length === 0) return;
+    
+    // إيقاف أي مؤقت سابق
     if (intervalRef.current) clearInterval(intervalRef.current);
+    
+    // إنشاء مؤقت جديد بفاصل ثابت
     intervalRef.current = setInterval(() => {
-      if (isPlayingRef.current && goToNextRef.current) {
-        goToNextRef.current();
+      if (isPlayingRef.current) {
+        goToNextThumbnail();
       }
     }, SEEK_INTERVAL_MS);
+    
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [loading, thumbnails.length]);
+  }, [loading, thumbnails.length, goToNextThumbnail]);
 
-  // استماع لحدث play على الفيديو: إيقاف التلقائي بشكل مطلق
+  // استماع لحدث play على الفيديو لإيقاف التلقائي بشكل مطلق
   useEffect(() => {
-    const video = videoElementRef.current;
+    const video = videoElement;
     if (!video) return;
     
     const handlePlay = () => {
+      // إيقاف التلقائي إذا كان شغالاً
       if (isPlayingRef.current) {
-        setIsPlaying(false); // إيقاف التلقائي نهائياً
+        setIsPlaying(false);
       }
     };
     
@@ -125,17 +127,18 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
     return () => {
       video.removeEventListener('play', handlePlay);
     };
-  }, []);
+  }, [videoElement]);
 
-  // عند تغيير activeIndex -> التمرير في الفيديو
+  // عند تغيير activeIndex، نطلب التمرير في الفيديو
   useEffect(() => {
-    if (duration > 0 && thumbnails.length > 0) {
-      const time = getTimeFromIndex(activeIndex);
+    if (durationRef.current > 0 && thumbnails.length > 0) {
+      const step = durationRef.current / THUMBNAIL_COUNT;
+      const time = step * activeIndex;
       onSeek(time);
     }
-  }, [activeIndex, duration, thumbnails.length, onSeek, getTimeFromIndex]);
+  }, [activeIndex, thumbnails.length, onSeek]);
 
-  // توليد اللقطات
+  // توليد اللقطات (نفس السابق)
   const generateThumbnails = useCallback(async () => {
     if (!videoElement) return;
     setLoading(true);
@@ -171,21 +174,20 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
     setLoading(false);
   }, [videoElement]);
 
-  const stopTimer = useCallback(() => {
-    setIsPlaying(false);
-  }, []);
-
+  // إعادة التشغيل: تعيين المشهد الأول وتفعيل التلقائي
   const restartTimer = useCallback(() => {
     setActiveIndex(0);
     setIsPlaying(true);
   }, []);
 
+  // النقر اليدوي على مشهد: يوقف التلقائي ويذهب إلى التوقيت
   const handleThumbnailClick = useCallback((index: number, time: number) => {
-    stopTimer();
+    setIsPlaying(false);
     setActiveIndex(index);
     onSeek(time);
-  }, [stopTimer, onSeek]);
+  }, [onSeek]);
 
+  // بدء التوليد عند تحميل الفيديو
   useEffect(() => {
     if (!videoElement) return;
     setIsPlaying(true);
@@ -212,7 +214,7 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
       <div className="flex justify-between items-center mb-2 px-1">
         <div className="flex items-center gap-3">
           <span className="text-[11px] text-white/60">
-            {isPlaying ? `🔄 تسليط ضوء تلقائي (كل ${SEEK_INTERVAL_MS/1000} ثانية)` : '⏸️ توقف مؤقت (شغّل الفيديو لإيقاف دائم)'}
+            {isPlaying ? `🔄 تسليط ضوء تلقائي (كل ${SEEK_INTERVAL_MS/1000} ثانية)` : '⏸️ توقف مؤقت (شغّل الفيديو للإيقاف الدائم)'}
           </span>
           <span className="text-[11px] text-gold/80">
             {activeIndex + 1} / {THUMBNAIL_COUNT}
@@ -226,7 +228,8 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
       </div>
       <div className="flex gap-2 overflow-x-auto scrollbar-thin scrollbar-track-gray-800 scrollbar-thumb-gold/50 pb-2">
         {thumbnails.map((thumb, idx) => {
-          const time = getTimeFromIndex(idx);
+          const step = duration / THUMBNAIL_COUNT;
+          const time = step * idx;
           const percentage = Math.round((time / duration) * 100);
           const isActive = activeIndex === idx;
           return (
