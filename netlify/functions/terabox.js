@@ -1,28 +1,15 @@
 exports.handler = async (event) => {
-  const headers = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
-  };
-
-  if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 204, headers };
-  }
-
   const params = event.queryStringParameters;
   const shareUrl = params?.url;
-  const isVideoRequest = params?.video === '1';
-  const isEmbedRequest = params?.embed === '1';
+  const isEmbed = params?.embed === '1';
 
   if (!shareUrl) {
-    return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing URL' }) };
+    return { statusCode: 400, body: 'Missing URL' };
   }
 
-  // جلب الكوكيز من متغيرات البيئة
   const userCookie = process.env.TERABOX_COOKIE;
   if (!userCookie) {
-    console.error('TERABOX_COOKIE not set');
-    return { statusCode: 500, body: 'Server configuration error' };
+    return { statusCode: 500, body: 'Server configuration: missing cookie' };
   }
 
   try {
@@ -36,99 +23,119 @@ exports.handler = async (event) => {
     }
     if (!surl) throw new Error('Cannot extract surl');
 
+    // جلب الصفحة للحصول على الرابط المباشر
     const pageUrl = `https://www.terabox.com/sharing/link?surl=${surl}`;
-    
-    // جلب الصفحة
     const pageRes = await fetch(pageUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'Cookie': userCookie,
       },
     });
-    let html = await pageRes.text();
+    const html = await pageRes.text();
 
-    // إذا كان طلب تضمين الصفحة (embed)
-    if (isEmbedRequest) {
-      // إضافة كود لتشغيل الفيديو تلقائياً وإزالة العناصر المزعجة
-      const injectCode = `
-      <script>
-        (function() {
-          // إزالة أي overlays أو popups
-          const removeOverlays = setInterval(function() {
-            const overlays = document.querySelectorAll('.modal, .overlay, .popup, [class*="modal"], [class*="overlay"], .dialog, .mask');
-            overlays.forEach(el => el && el.remove && el.remove());
-            // محاولة تشغيل الفيديو
-            const video = document.querySelector('video');
-            if(video && video.paused) {
-              video.play().catch(e => console.log('Autoplay blocked'));
-            }
-          }, 500);
-          setTimeout(() => clearInterval(removeOverlays), 10000);
-        })();
-      </script>
-      <style>
-        body { overflow: auto !important; }
-        .header, .footer, .sidebar { display: none !important; }
-        .video-container, .player-container { margin: 0 !important; padding: 0 !important; }
-      </style>
-      `;
-      
-      // إضافة الكود قبل </body>
-      html = html.replace('</body>', `${injectCode}</body>`);
-      
-      // إضافة رؤوس تسمح بالتضمين
-      const embedHeaders = {
-        'Content-Type': 'text/html',
-        'X-Frame-Options': 'ALLOWALL',
-        'Content-Security-Policy': "frame-ancestors *",
-      };
-      
-      return {
-        statusCode: 200,
-        headers: embedHeaders,
-        body: html,
-      };
+    // استخراج الرابط المباشر للفيديو
+    let videoUrl = null;
+    
+    // طريقة 1: رابط freeterabox.com
+    const urlPattern = /https:\/\/d[0-9]+\.freeterabox\.com\/file\/[a-zA-Z0-9]+[^\s"'<>]+\.mp4[^\s"'<>]*/i;
+    const match = html.match(urlPattern);
+    if (match) videoUrl = match[0];
+    
+    // طريقة 2: البحث عن dlink
+    if (!videoUrl) {
+      const dlinkMatch = html.match(/dlink["']?\s*:\s*["']([^"']+\.mp4[^"']*)["']/i);
+      if (dlinkMatch) videoUrl = dlinkMatch[1];
+    }
+    
+    // طريقة 3: البحث عن أي رابط mp4
+    if (!videoUrl) {
+      const mp4Match = html.match(/https?:\/\/[^\s"'<>]+\.mp4[^\s"'<>]*/i);
+      if (mp4Match) videoUrl = mp4Match[0];
     }
 
-    // إذا كان طلب فيديو مباشر (video=1) - الكود القديم
-    if (isVideoRequest) {
-      // البحث عن رابط الفيديو
-      const urlPattern = /https:\/\/d[0-9]+\.freeterabox\.com\/file\/[a-zA-Z0-9]+[^\s"'<>]+/g;
-      const matches = html.match(urlPattern);
-      let finalUrl = matches ? matches[0] : null;
-      
-      if (!finalUrl) {
-        const dlinkMatch = html.match(/dlink["']?\s*:\s*["']([^"']+)["']/);
-        if (dlinkMatch) finalUrl = dlinkMatch[1];
+    if (!videoUrl) {
+      console.error('Could not find video URL. HTML snippet:', html.substring(0, 500));
+      throw new Error('No video URL found');
+    }
+
+    console.log(`Found video URL: ${videoUrl.substring(0, 100)}...`);
+
+    // إذا كان طلب embed، نعيد صفحة HTML بسيطة تحتوي على الفيديو
+    if (isEmbed) {
+      const embedHtml = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Video Player</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { 
+      background: #000; 
+      display: flex; 
+      justify-content: center; 
+      align-items: center; 
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+    .video-container {
+      width: 100%;
+      max-width: 1280px;
+      margin: 0 auto;
+    }
+    video {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    .error {
+      color: #ff4444;
+      text-align: center;
+      padding: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="video-container">
+    <video controls autoplay>
+      <source src="${videoUrl}" type="video/mp4">
+      <div class="error">Your browser does not support the video tag.</div>
+    </video>
+  </div>
+  <script>
+    // محاولة تشغيل الفيديو تلقائياً
+    document.addEventListener('DOMContentLoaded', function() {
+      const video = document.querySelector('video');
+      if(video) {
+        video.play().catch(e => console.log('Autoplay prevented:', e));
       }
-      
-      if (!finalUrl) throw new Error('No video URL found');
-      
-      const videoRes = await fetch(finalUrl, {
-        headers: { 'User-Agent': 'Mozilla/5.0' }
-      });
-      
-      const buffer = await videoRes.arrayBuffer();
+    });
+  </script>
+</body>
+</html>`;
+
       return {
         statusCode: 200,
         headers: {
-          ...headers,
-          'Content-Type': 'video/mp4',
-          'Content-Disposition': 'inline',
+          'Content-Type': 'text/html',
+          'X-Frame-Options': 'ALLOWALL',
         },
-        body: Buffer.from(buffer).toString('base64'),
-        isBase64Encoded: true,
+        body: embedHtml,
       };
     }
 
-    // الوضع العادي: إرجاع الرابط المباشر
+    // إرجاع الرابط المباشر كـ JSON
     return {
       statusCode: 200,
-      headers,
-      body: JSON.stringify({ success: true, message: 'Use ?video=1 or ?embed=1' }),
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      body: JSON.stringify({ success: true, video_url: videoUrl }),
     };
   } catch (err) {
     console.error('Error:', err.message);
-    return { statusCode: 500, body: err.message };
+    return {
+      statusCode: 500,
+      body: `<html><body style="background:#000;color:#fff;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;"><div>Error: ${err.message}<br><a href="${shareUrl}" target="_blank">Open in Terabox</a></div></body></html>`,
+      headers: { 'Content-Type': 'text/html' },
+    };
   }
 };
