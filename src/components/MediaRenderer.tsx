@@ -40,7 +40,7 @@ async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null>
   }
 }
 
-// ------------------- مكون عرض اللقطات (ثابت بدون hover) -------------------
+// ------------------- مكون عرض اللقطات (المتحرك التلقائي) -------------------
 interface ThumbnailStripProps {
   videoElement: HTMLVideoElement | null;
   onSeek: (time: number) => void;
@@ -51,6 +51,9 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   const [thumbnails, setThumbnails] = useState<string[]>([]);
   const [duration, setDuration] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const animationRef = useRef<number | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(document.createElement('canvas'));
   const THUMBNAIL_COUNT = 10;
 
@@ -94,10 +97,82 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
     setLoading(false);
   }, [videoElement]);
 
+  // بدء الحركة التلقائية اللانهائية
+  const startAutoScroll = useCallback(() => {
+    if (!containerRef.current || !isPlaying) return;
+    
+    const scroll = () => {
+      if (!containerRef.current) return;
+      
+      // مقدار التمرير لكل إطار (بكسل/ثانية)
+      const scrollSpeed = 1.5;
+      containerRef.current.scrollLeft += scrollSpeed;
+      
+      // عندما نصل إلى النهاية، نعود إلى البداية فوراً
+      const maxScroll = containerRef.current.scrollWidth - containerRef.current.clientWidth;
+      if (containerRef.current.scrollLeft >= maxScroll) {
+        containerRef.current.scrollLeft = 0;
+      }
+      
+      animationRef.current = requestAnimationFrame(scroll);
+    };
+    
+    animationRef.current = requestAnimationFrame(scroll);
+  }, [isPlaying]);
+
+  // إيقاف الحركة التلقائية
+  const stopAutoScroll = useCallback(() => {
+    if (animationRef.current) {
+      cancelAnimationFrame(animationRef.current);
+      animationRef.current = null;
+    }
+  }, []);
+
+  // التعامل مع تمرير المستخدم اليدوي
+  const handleUserInteraction = useCallback(() => {
+    if (isPlaying) {
+      stopAutoScroll();
+      setIsPlaying(false);
+      
+      // إعادة التشغيل التلقائي بعد 5 ثوانٍ من عدم التفاعل
+      setTimeout(() => {
+        if (!isPlaying && containerRef.current) {
+          setIsPlaying(true);
+          startAutoScroll();
+        }
+      }, 5000);
+    }
+  }, [isPlaying, stopAutoScroll, startAutoScroll]);
+
+  // مراقبة أحداث التمرير اليدوي
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    
+    container.addEventListener('wheel', handleUserInteraction);
+    container.addEventListener('touchstart', handleUserInteraction);
+    container.addEventListener('mousedown', handleUserInteraction);
+    
+    return () => {
+      container.removeEventListener('wheel', handleUserInteraction);
+      container.removeEventListener('touchstart', handleUserInteraction);
+      container.removeEventListener('mousedown', handleUserInteraction);
+    };
+  }, [handleUserInteraction]);
+
+  // بدء الحركة عند تحميل اللقطات
+  useEffect(() => {
+    if (!loading && thumbnails.length > 0 && isPlaying) {
+      startAutoScroll();
+    }
+    
+    return () => stopAutoScroll();
+  }, [loading, thumbnails, isPlaying, startAutoScroll, stopAutoScroll]);
+
+  // إعادة التوليد عند تغيير الفيديو
   useEffect(() => {
     if (!videoElement) return;
     
-    // انتظر حتى يتم تحميل الفيديو بالكامل
     if (videoElement.readyState >= 2) {
       generateThumbnails();
     } else {
@@ -106,6 +181,7 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   }, [videoElement, generateThumbnails]);
 
   if (!isVisible) return null;
+  
   if (loading) {
     return (
       <div className="flex justify-center items-center gap-2 mt-3 p-2 bg-black/50 rounded-lg">
@@ -117,30 +193,69 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
 
   if (thumbnails.length === 0) return null;
 
-  // تنسيق الوقت (ثواني -> mm:ss)
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
+  // تكرار اللقطات 3 مرات لإنشاء تأثير لا نهائي سلس
+  const infiniteThumbnails = [...thumbnails, ...thumbnails, ...thumbnails];
+
   return (
-    <div className="mt-3 w-full overflow-x-auto pb-2">
-      <div className="flex gap-2 min-w-max">
-        {thumbnails.map((thumb, idx) => {
-          const time = (duration / THUMBNAIL_COUNT) * idx;
+    <div className="mt-3 w-full">
+      {/* مؤشر حالة الحركة */}
+      <div className="flex justify-between items-center mb-1 px-1">
+        <span className="text-[10px] text-white/50">
+          {isPlaying ? '🔄 تمرير تلقائي' : '⏸️ توقف مؤقت - حرك يدوياً للعودة'}
+        </span>
+        <button
+          onClick={() => {
+            if (isPlaying) {
+              stopAutoScroll();
+              setIsPlaying(false);
+            } else {
+              setIsPlaying(true);
+              startAutoScroll();
+            }
+          }}
+          className="text-[10px] text-gold/70 hover:text-gold transition-colors"
+        >
+          {isPlaying ? 'إيقاف التمرير' : 'تشغيل التمرير التلقائي'}
+        </button>
+      </div>
+      
+      {/* شريط المشاهد المتحرك */}
+      <div
+        ref={containerRef}
+        className="flex gap-2 overflow-x-auto scrollbar-thin scrollbar-track-gray-800 scrollbar-thumb-gold/50 pb-2 cursor-grab active:cursor-grabbing"
+        style={{ scrollBehavior: 'auto' }}
+      >
+        {infiniteThumbnails.map((thumb, idx) => {
+          const originalIdx = idx % thumbnails.length;
+          const time = (duration / thumbnails.length) * originalIdx;
           const percentage = Math.round((time / duration) * 100);
           return (
             <button
-              key={idx}
-              onClick={() => onSeek(time)}
-              className="flex flex-col items-center gap-1 transition-all hover:scale-105 focus:outline-none group"
+              key={`${originalIdx}-${idx}`}
+              onClick={() => {
+                stopAutoScroll();
+                onSeek(time);
+                // إعادة التشغيل التلقائي بعد 3 ثوانٍ
+                setTimeout(() => {
+                  if (!isPlaying) {
+                    setIsPlaying(true);
+                    startAutoScroll();
+                  }
+                }, 3000);
+              }}
+              className="flex flex-col items-center gap-1 transition-all hover:scale-105 focus:outline-none group flex-shrink-0"
               title={`انتقل إلى ${formatTime(time)} (${percentage}%)`}
             >
               <div className="relative">
                 <img
                   src={thumb}
-                  alt={`مشهد ${idx + 1}`}
+                  alt={`مشهد ${originalIdx + 1}`}
                   className="w-28 h-16 object-cover rounded-lg border border-gold/30 group-hover:border-gold transition-colors"
                   loading="lazy"
                 />
@@ -308,7 +423,7 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/30" />;
   }
 
-  // Video with Plyr and Thumbnail Strip (ظاهرة دائماً)
+  // Video with Plyr and Auto-scrolling Thumbnail Strip
   return (
     <div className="w-full rounded-lg border border-gold/30 bg-black overflow-hidden">
       <div className="p-2">
@@ -323,7 +438,7 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
           متصفحك لا يدعم تشغيل الفيديو.
         </video>
         
-        {/* شريط المشاهد - يظهر دائماً أسفل الفيديو */}
+        {/* شريط المشاهد المتحرك التلقائي */}
         {playerReady && (
           <ThumbnailStrip
             videoElement={videoRef.current}
