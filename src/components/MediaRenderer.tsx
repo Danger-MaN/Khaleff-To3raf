@@ -347,7 +347,7 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
 
   return (
     <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
-      <div className="p-1">
+      <div className="p-0">
         <video
           ref={videoRef}
           className="plyr-react plyr w-full rounded-lg"
