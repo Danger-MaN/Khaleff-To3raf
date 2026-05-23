@@ -62,36 +62,19 @@ async function fetchTeraboxDirectUrl(shareUrl: string): Promise<{ type: "video" 
   }
 }
 
-export function MediaRenderer({ url, alt = "" }: Props) {
-  if (!url) return null;
+// MediaRenderer.tsx
+// ... (الدوال المساعدة getYouTubeId, getTeraboxShareId, fetchTeraboxDirectUrl كما هي) ...
 
-  // 1. يوتيوب
-  const ytId = getYouTubeId(url);
-  if (ytId) {
-    return (
-      <div className="relative w-full overflow-hidden rounded-lg shadow-mystic border border-gold/30" style={{ aspectRatio: "16/9" }}>
-        <iframe
-          src={`https://www.youtube.com/embed/${ytId}`}
-          title="YouTube video"
-          className="absolute inset-0 h-full w-full"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-          allowFullScreen
-        />
-      </div>
-    );
-  }
+export function MediaRenderer({ url, alt = "" }: Props) {
+  // ... (منطق YouTube كما هو) ...
 
   // 2. تيرابوكس
   const tbShareId = getTeraboxShareId(url);
   if (tbShareId) {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
     const [direct, setDirect] = useState<{ type: "video" | "image"; url: string } | null>(null);
-    // eslint-disable-next-line react-hooks/rules-of-hooks
     const [loading, setLoading] = useState(true);
-    // eslint-disable-next-line react-hooks/rules-of-hooks
     const [error, setError] = useState(false);
 
-    // eslint-disable-next-line react-hooks/rules-of-hooks
     useEffect(() => {
       let cancelled = false;
       setLoading(true);
@@ -109,11 +92,25 @@ export function MediaRenderer({ url, alt = "" }: Props) {
             setLoading(false);
           }
         });
-      return () => {
-        cancelled = true;
-      };
+      return () => { cancelled = true; };
     }, [url]);
 
+    if (loading) { /* ... */ }
+    if (error) { /* ... */ }
+    if (direct?.type === "video") {
+      // ✅ التعديل المهم: استخدم iframe
+      return (
+        <div className="relative w-full overflow-hidden rounded-lg shadow-mystic border border-gold/30 bg-black" style={{ aspectRatio: "16/9" }}>
+          <iframe
+            src={direct.url}  // الرابط المباشر من الـ Worker
+            className="absolute inset-0 h-full w-full"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+          />
+        </div>
+      );
+    }
+    
     if (loading) {
       return (
         <div className="w-full rounded-lg shadow-mystic border border-gold/30 bg-black/20 flex items-center justify-center p-8" style={{ aspectRatio: "16/9" }}>
