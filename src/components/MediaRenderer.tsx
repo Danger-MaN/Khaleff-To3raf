@@ -1,9 +1,15 @@
+// MediaRenderer.tsx
+"use client";
+
 import { useState, useEffect } from "react";
 
 interface Props {
   url?: string;
   alt?: string;
 }
+
+// رابط الـ Worker الخاص بك
+const TERABOX_WORKER = "https://terabox.dangerhelp10.workers.dev";
 
 // استخراج معرف يوتيوب
 function getYouTubeId(url: string): string | null {
@@ -37,31 +43,21 @@ function getTeraboxShareId(url: string): string | null {
   return null;
 }
 
-// استدعاء API لتحويل رابط المشاركة إلى رابط مباشر
+// استدعاء الـ Worker للحصول على رابط مباشر من تيرابوكس
 async function fetchTeraboxDirectUrl(shareUrl: string): Promise<{ type: "video" | "image"; url: string } | null> {
   try {
-    // استخدام API مجاني (قد يتغير أو يتوقف، يمكن استبداله بوكل خاص)
-    const apiUrl = `https://terabox-worker.robinkumarshakya103.workers.dev/api?url=${encodeURIComponent(shareUrl)}`;
-    const response = await fetch(apiUrl);
+    const response = await fetch(`${TERABOX_WORKER}?url=${encodeURIComponent(shareUrl)}`);
     const data = await response.json();
 
-    if (!data.success || !data.files || data.files.length === 0) {
-      return null;
-    }
-
-    const file = data.files[0];
-    const fileName = file.file_name?.toLowerCase() || "";
-    const isVideo = /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(fileName);
-    const isImage = /\.(jpg|jpeg|png|gif|webp|bmp|avif)$/i.test(fileName);
-
-    if (isVideo && file.streaming_url) {
-      return { type: "video", url: file.streaming_url };
-    } else if (isImage && file.download_url) {
-      return { type: "image", url: file.download_url };
+    if (data.success && (data.type === "video" || data.type === "image")) {
+      return {
+        type: data.type,
+        url: data.streaming_url,
+      };
     }
     return null;
   } catch (error) {
-    console.error("Terabox API error:", error);
+    console.error("Terabox worker error:", error);
     return null;
   }
 }
@@ -70,12 +66,12 @@ export function MediaRenderer({ url, alt = "" }: Props) {
   if (!url) return null;
 
   // 1. يوتيوب
-  const yt = getYouTubeId(url);
-  if (yt) {
+  const ytId = getYouTubeId(url);
+  if (ytId) {
     return (
       <div className="relative w-full overflow-hidden rounded-lg shadow-mystic border border-gold/30" style={{ aspectRatio: "16/9" }}>
         <iframe
-          src={`https://www.youtube.com/embed/${yt}`}
+          src={`https://www.youtube.com/embed/${ytId}`}
           title="YouTube video"
           className="absolute inset-0 h-full w-full"
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
@@ -85,7 +81,7 @@ export function MediaRenderer({ url, alt = "" }: Props) {
     );
   }
 
-  // 2. تيرابوكس – نحاول الحصول على رابط مباشر
+  // 2. تيرابوكس
   const tbShareId = getTeraboxShareId(url);
   if (tbShareId) {
     // eslint-disable-next-line react-hooks/rules-of-hooks
@@ -101,7 +97,7 @@ export function MediaRenderer({ url, alt = "" }: Props) {
       setLoading(true);
       setError(false);
       fetchTeraboxDirectUrl(url)
-        .then(result => {
+        .then((result) => {
           if (!cancelled) {
             setDirect(result);
             setLoading(false);
@@ -113,7 +109,9 @@ export function MediaRenderer({ url, alt = "" }: Props) {
             setLoading(false);
           }
         });
-      return () => { cancelled = true; };
+      return () => {
+        cancelled = true;
+      };
     }, [url]);
 
     if (loading) {
@@ -124,7 +122,15 @@ export function MediaRenderer({ url, alt = "" }: Props) {
       );
     }
 
-    if (direct && direct.type === "video") {
+    if (error) {
+      return (
+        <div className="w-full rounded-lg shadow-mystic border border-gold/30 bg-black/20 flex items-center justify-center p-8" style={{ aspectRatio: "16/9" }}>
+          <span className="text-red-400/70 text-sm">حدث خطأ في تحميل الوسائط من Terabox</span>
+        </div>
+      );
+    }
+
+    if (direct?.type === "video") {
       return (
         <video
           src={direct.url}
@@ -134,7 +140,7 @@ export function MediaRenderer({ url, alt = "" }: Props) {
       );
     }
 
-    if (direct && direct.type === "image") {
+    if (direct?.type === "image") {
       return (
         <img
           src={direct.url}
@@ -145,7 +151,7 @@ export function MediaRenderer({ url, alt = "" }: Props) {
       );
     }
 
-    // Fallback: iframe الأصلي من تيرابوكس أو رابط خارجي في حالة الفشل
+    // Fallback في حالة فشل API
     const embedSrc = `https://www.terabox.com/sharing/embed?surl=${tbShareId}`;
     return (
       <div className="relative w-full overflow-hidden rounded-lg shadow-mystic border border-gold/30 bg-black" style={{ aspectRatio: "16/9" }}>
@@ -169,7 +175,7 @@ export function MediaRenderer({ url, alt = "" }: Props) {
     );
   }
 
-  // 3. ملف فيديو مباشر
+  // 3. ملف فيديو مباشر (mp4, webm, إلخ)
   if (/\.(mp4|webm|ogg|mov)(\?|$)/i.test(url)) {
     return (
       <video
