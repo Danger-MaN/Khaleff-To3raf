@@ -1,6 +1,7 @@
 exports.handler = async (event) => {
   const headers = {
     'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
   };
 
@@ -33,9 +34,9 @@ exports.handler = async (event) => {
       throw new Error('Invalid Streamtape URL or ID');
     }
 
-    // إنشاء رابط الخدمة الخارجية التي تدعم التقديم والتأخير
+    // استخدام الخدمة الخارجية التي تدعم التقديم والتأخير
     const directVideoUrl = `https://api.streamtape.best/streamtape?url=https://streamtape.com/v/${fileId}`;
-    console.log(`Streaming URL generated: ${directVideoUrl}`);
+    console.log(`Generated streaming URL for file: ${fileId}`);
 
     return {
       statusCode: 200,
@@ -43,7 +44,7 @@ exports.handler = async (event) => {
       body: JSON.stringify({ success: true, direct_url: directVideoUrl }),
     };
   } catch (err) {
-    console.error('Streamtape function error:', err.message);
+    console.error('Streamtape error:', err.message);
     return {
       statusCode: 500,
       headers,
