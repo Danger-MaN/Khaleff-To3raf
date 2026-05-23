@@ -46,7 +46,7 @@ interface ThumbnailStripProps {
   isVisible?: boolean;
 }
 
-const SEEK_INTERVAL_MS = 1250; // 3 ثوانٍ ثابتة بين المشاهد
+const SEEK_INTERVAL_MS = 1250; // 1.25 ثانية بين المشاهد
 const THUMBNAIL_COUNT = 10;
 
 function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStripProps) {
@@ -111,21 +111,31 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
     };
   }, [loading, thumbnails.length, goToNextThumbnail]);
 
-  // استماع لحدث play على الفيديو لإيقاف التلقائي بشكل مطلق
+  // استماع لحدثي play و pause على الفيديو لإيقاف التلقائي بشكل مطلق
   useEffect(() => {
     const video = videoElement;
     if (!video) return;
     
     const handlePlay = () => {
-      // إيقاف التلقائي إذا كان شغالاً
+      // إيقاف التلقائي عند الضغط على play
+      if (isPlayingRef.current) {
+        setIsPlaying(false);
+      }
+    };
+    
+    const handlePause = () => {
+      // إيقاف التلقائي عند الضغط على pause أيضاً
       if (isPlayingRef.current) {
         setIsPlaying(false);
       }
     };
     
     video.addEventListener('play', handlePlay);
+    video.addEventListener('pause', handlePause);
+    
     return () => {
       video.removeEventListener('play', handlePlay);
+      video.removeEventListener('pause', handlePause);
     };
   }, [videoElement]);
 
@@ -138,7 +148,7 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
     }
   }, [activeIndex, thumbnails.length, onSeek]);
 
-  // توليد اللقطات (نفس السابق)
+  // توليد اللقطات
   const generateThumbnails = useCallback(async () => {
     if (!videoElement) return;
     setLoading(true);
@@ -214,7 +224,7 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
       <div className="flex justify-between items-center mb-2 px-1">
         <div className="flex items-center gap-3">
           <span className="text-[11px] text-white/60">
-            {isPlaying ? `🔄 تسليط ضوء تلقائي (كل ${SEEK_INTERVAL_MS/1000} ثانية)` : '⏸️ توقف مؤقت (شغّل الفيديو للإيقاف الدائم)'}
+            {isPlaying ? `🔄 تسليط ضوء تلقائي (كل ${SEEK_INTERVAL_MS/1000} ثانية)` : '⏸️ توقف مؤقت (التفاعل مع الفيديو يوقف التلقائي)'}
           </span>
           <span className="text-[11px] text-gold/80">
             {activeIndex + 1} / {THUMBNAIL_COUNT}
@@ -334,9 +344,6 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
   const handleSeek = (time: number) => {
     if (videoRef.current) {
       videoRef.current.currentTime = time;
-      if (videoRef.current.paused) {
-        videoRef.current.play().catch(e => console.log('Play prevented:', e));
-      }
     }
   };
 
