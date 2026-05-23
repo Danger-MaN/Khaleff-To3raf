@@ -40,7 +40,7 @@ async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null>
   }
 }
 
-// ------------------- مكون عرض اللقطات (المؤقت الدائري البسيط) -------------------
+// ------------------- مكون عرض اللقطات (الحلقة المفرغة الحقيقية) -------------------
 interface ThumbnailStripProps {
   videoElement: HTMLVideoElement | null;
   onSeek: (time: number) => void;
@@ -52,10 +52,11 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   const [duration, setDuration] = useState(0);
   const [loading, setLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [isAutoActive, setIsAutoActive] = useState(true);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [isLooping, setIsLooping] = useState(true);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(document.createElement('canvas'));
   const THUMBNAIL_COUNT = 10;
+  const INTERVAL_SECONDS = 3;
 
   const generateThumbnails = useCallback(async () => {
     if (!videoElement) return;
@@ -97,66 +98,73 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
     setLoading(false);
   }, [videoElement]);
 
-  // بدء المؤقت الدائري
-  const startTimer = useCallback(() => {
-    if (intervalRef.current) clearInterval(intervalRef.current);
+  // دالة الانتقال إلى المشهد التالي (حلقة مفرغة حقيقية)
+  const goToNextThumbnail = useCallback(() => {
+    if (!isLooping) return;
     
-    intervalRef.current = setInterval(() => {
-      if (!isAutoActive) return;
-      
-      setActiveIndex(prev => {
-        let next = prev + 1;
-        if (next >= THUMBNAIL_COUNT) {
-          next = 0; // العودة إلى البداية - حلقة لا نهائية صحيحة
-        }
-        return next;
-      });
-    }, 3000);
-  }, [isAutoActive, THUMBNAIL_COUNT]);
+    setActiveIndex(prev => {
+      let next = prev + 1;
+      if (next >= THUMBNAIL_COUNT) {
+        next = 0; // العودة إلى البداية - حلقة مفرغة لا نهائية
+      }
+      return next;
+    });
+    
+    // جدولة الانتقال التالي
+    timeoutRef.current = setTimeout(goToNextThumbnail, INTERVAL_SECONDS * 1000);
+  }, [isLooping, THUMBNAIL_COUNT]);
 
-  // إيقاف المؤقت
-  const stopTimer = useCallback(() => {
-    setIsAutoActive(false);
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
+  // بدء الحلقة المفرغة
+  const startLoop = useCallback(() => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    setIsLooping(true);
+    setActiveIndex(0);
+    timeoutRef.current = setTimeout(goToNextThumbnail, INTERVAL_SECONDS * 1000);
+  }, [goToNextThumbnail]);
+
+  // إيقاف الحلقة
+  const stopLoop = useCallback(() => {
+    setIsLooping(false);
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
     }
   }, []);
 
-  // إعادة تشغيل المؤقت من البداية
-  const restartTimer = useCallback(() => {
-    setActiveIndex(0);
-    setIsAutoActive(true);
-    startTimer();
-  }, [startTimer]);
-
-  // عند النقر على مشهد معين
+  // عند النقر على مشهد معين (يتفاعل المستخدم مع الفيديو)
   const handleThumbnailClick = useCallback((index: number, time: number) => {
-    if (isAutoActive) {
-      stopTimer();
-    }
+    stopLoop(); // تتوقف الحلقة المفرغة نهائياً
     setActiveIndex(index);
     onSeek(time);
-  }, [isAutoActive, stopTimer, onSeek]);
+  }, [stopLoop, onSeek]);
 
-  // بدء المؤقت عند تحميل اللقطات
+  // تنظيف المؤقت عند إلغاء تحميل المكون
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
+
+  // بدء الحلقة عند تحميل اللقطات
   useEffect(() => {
     if (!loading && thumbnails.length > 0) {
-      startTimer();
+      startLoop();
     }
     
     return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
       }
     };
-  }, [loading, thumbnails, startTimer]);
+  }, [loading, thumbnails, startLoop]);
 
   // إعادة التوليد عند تغيير الفيديو
   useEffect(() => {
     if (!videoElement) return;
     
-    setIsAutoActive(true);
+    setIsLooping(true);
     setActiveIndex(0);
     
     if (videoElement.readyState >= 2) {
@@ -191,20 +199,12 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
       <div className="flex justify-between items-center mb-2 px-1">
         <div className="flex items-center gap-3">
           <span className="text-[11px] text-white/60">
-            {isAutoActive ? '🔄 تسليط ضوء تلقائي (حلقة لا نهائية)' : '⏸️ توقف مؤقت - تم التفاعل'}
+            {isLooping ? '🔄 حلقة مفرغة (تتكرر للأبد)' : '⏸️ توقفت - تم تشغيل الفيديو'}
           </span>
           <span className="text-[11px] text-gold/80">
             المشهد {activeIndex + 1} / {THUMBNAIL_COUNT}
           </span>
         </div>
-        {!isAutoActive && (
-          <button
-            onClick={restartTimer}
-            className="text-[11px] text-gold/80 hover:text-gold transition-colors"
-          >
-            ▶ إعادة التشغيل من البداية
-          </button>
-        )}
       </div>
       
       {/* شريط المشاهد الثابت */}
