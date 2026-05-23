@@ -17,33 +17,39 @@ function getYouTubeId(url: string): string | null {
   return null;
 }
 
-// دالة متطورة لاستخراج الـ ID أو الـ SURL من روابط تيرابوكس المختلفة
-function getTeraboxId(url: string): string | null {
-  if (!/(terabox|teraboxapp|terabox\.app|1024terabox|dubox|4funbox|mirrobox|nephobox|momerybox|tibibox|sharebox)\./i.test(url)) {
-    return null;
-  }
+function isTeraboxUrl(url: string): boolean {
+  return /(terabox|teraboxapp|terabox\.app|1024terabox|dubox|4funbox|mirrobox|nephobox|momerybox|tibibox|sharebox)\./i.test(url);
+}
+
+function getTeraboxShareId(url: string): string | null {
+  if (!isTeraboxUrl(url)) return null;
+
   const patterns = [
     /[?&]surl=([a-zA-Z0-9_-]+)/,
     /\/s\/1?([a-zA-Z0-9_-]+)/,
     /\/sharing\/link\?surl=([a-zA-Z0-9_-]+)/,
   ];
+
   for (const p of patterns) {
     const m = url.match(p);
     if (m) return m[1];
   }
-  // إذا لم يجد نمطاً، يحاول أخذ الجزء الأخير من الرابط كـ ID احتياطي
-  try {
-    const parts = url.split('/');
-    return parts[parts.length - 1].split('?')[0];
-  } catch {
-    return null;
-  }
+  return null;
+}
+
+async function fetchTeraboxMeta(shareUrl: string) {
+  const res = await fetch(`/api/terabox/resolve?url=${encodeURIComponent(shareUrl)}`);
+  if (!res.ok) throw new Error("Failed to resolve Terabox media");
+  return res.json() as Promise<
+    | { kind: "image"; src: string; alt?: string }
+    | { kind: "video"; src: string }
+    | { kind: "embed"; src: string }
+  >;
 }
 
 export function MediaRenderer({ url, alt = "" }: Props) {
   if (!url) return null;
 
-  // 1. التحقق من يوتيوب
   const yt = getYouTubeId(url);
   if (yt) {
     return (
@@ -59,40 +65,12 @@ export function MediaRenderer({ url, alt = "" }: Props) {
     );
   }
 
-  // 2. التحقق من Terabox
-  const tbId = getTeraboxId(url);
-  if (tbId) {
-    /* ملاحظة هامة بناءً على الفيديو [00:27:49]:
-      الروابط المباشرة من تيرابوكس تحتاج خادم خلفي (Backend API) لتوليد رابط مباشر يدعم الـ Streaming.
-      يمكنك استخدام الـ API المباشر للمشغل المخصص المتوفر في الفيديو بالشكل التالي:
-    */
-    const directStreamUrl = `https://terabox.tech/api/watch?id=${tbId}`; 
-    // ملاحظة: استبدل النطاق أعلاه برابط الـ API الخاص بك أو الـ API المستخدم في الشرح
+  const tb = getTeraboxShareId(url);
 
-    return (
-      <div className="relative w-full overflow-hidden rounded-lg shadow-mystic border border-gold/30 bg-black" style={{ aspectRatio: "16/9" }}>
-        <video
-          src={directStreamUrl}
-          controls
-          poster={`https://terabox.tech/api/thumbnail?id=${tbId}`} // جلب الصورة المصغرة للملف إن وجدت [00:31:24]
-          className="absolute inset-0 h-full w-full"
-          preload="metadata"
-        />
-        <div className="absolute bottom-2 end-2 flex gap-2">
-          <a
-            href={url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-[10px] uppercase tracking-widest px-2 py-1 rounded bg-background/70 text-gold border border-gold/30 hover:bg-background"
-          >
-            Terabox Link ↗
-          </a>
-        </div>
-      </div>
-    );
+  if (tb) {
+    return <TeraboxViewer shareUrl={url} alt={alt} />;
   }
 
-  // 3. التحقق من روابط الفيديو المباشرة الأخرى
   if (/\.(mp4|webm|ogg|mov)(\?|$)/i.test(url)) {
     return (
       <video
@@ -103,7 +81,6 @@ export function MediaRenderer({ url, alt = "" }: Props) {
     );
   }
 
-  // 4. التحقق من الصور
   if (/\.(jpe?g|png|webp|gif|avif|svg)(\?|$)/i.test(url) || /^https?:\/\//.test(url)) {
     return (
       <img
@@ -116,4 +93,62 @@ export function MediaRenderer({ url, alt = "" }: Props) {
   }
 
   return null;
+}
+
+function TeraboxViewer({ shareUrl, alt }: { shareUrl: string; alt: string }) {
+  const [data, setData] = React.useState<
+    { kind: "image"; src: string; alt?: string } |
+    { kind: "video"; src: string } |
+    { kind: "embed"; src: string } |
+    null
+  >(null);
+
+  React.useEffect(() => {
+    let active = true;
+    fetchTeraboxMeta(shareUrl)
+      .then((meta) => {
+        if (active) setData(meta);
+      })
+      .catch(() => {
+        if (active) setData(null);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [shareUrl]);
+
+  if (!data) {
+    return (
+      <div className="w-full rounded-lg border border-gold/30 bg-black/40 p-4 text-sm text-muted-foreground">
+        جاري تحميل المحتوى...
+      </div>
+    );
+  }
+
+  if (data.kind === "image") {
+    return <img src={data.src} alt={data.alt || alt} className="w-full rounded-lg object-cover" loading="lazy" />;
+  }
+
+  if (data.kind === "video") {
+    return (
+      <video
+        src={data.src}
+        controls
+        playsInline
+        className="w-full rounded-lg bg-black"
+      />
+    );
+  }
+
+  return (
+    <iframe
+      src={data.src}
+      title="Terabox media"
+      className="w-full rounded-lg"
+      style={{ aspectRatio: "16/9" }}
+      allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+      allowFullScreen
+    />
+  );
 }
