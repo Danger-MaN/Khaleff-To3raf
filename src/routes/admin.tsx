@@ -8,6 +8,7 @@ import { SOCIAL_ICONS, socialsStore, type SocialIcon, type SocialLink } from "@/
 import * as Icons from "lucide-react";
 import { SUPPORTED_LANGS } from "@/lib/i18n";
 import { MediaRenderer } from "@/components/MediaRenderer";
+import { TranslatedText } from "@/components/TranslatedText";
 import { Plus, Pencil, Trash2, LogOut, Lock, X } from "lucide-react";
 
 export const Route = createFileRoute("/admin")({ component: AdminPage });
@@ -133,7 +134,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
           <table className="w-full text-sm">
             <thead className="bg-card/60 text-xs uppercase tracking-widest text-muted-foreground">
               <tr>
-                <th className="text-start px-4 py-3">{t("admin.fields.title")}</th>
+                <th className="text-start px-4 py-3">{t("nav.articles")}</th>
                 <th className="text-start px-4 py-3 hidden md:table-cell">{t("admin.fields.category")}</th>
                 <th className="text-start px-4 py-3 hidden md:table-cell">{t("admin.fields.slug")}</th>
                 <th className="w-px px-4 py-3"></th>
@@ -143,7 +144,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
               {articles.map((a) => (
                 <tr key={a.id} className="border-t border-gold/10 hover:bg-card/40">
                   <td className="px-4 py-3 font-display text-base">{a.title}</td>
-                  <td className="px-4 py-3 hidden md:table-cell text-gold text-xs uppercase tracking-widest">{categoryLabel(a.category, t)}</td>
+                  <td className="px-4 py-3 hidden md:table-cell text-gold text-xs uppercase tracking-widest"><TranslatedText text={categoryLabel(a.category, t)} /></td>
                   <td className="px-4 py-3 hidden md:table-cell text-xs text-muted-foreground">{a.slug}</td>
                   <td className="px-4 py-3 flex items-center gap-2">
                     <button onClick={() => setEditing({ ...a, translations: a.translations ?? {} })} className="p-2 rounded hover:bg-accent text-muted-foreground hover:text-gold">
@@ -326,7 +327,7 @@ function CategoriesManager() {
               </>
             ) : (
               <>
-                <span className="flex-1 text-sm text-gold">{c.label}</span>
+                <span className="flex-1 text-sm text-gold"><TranslatedText text={c.label} /></span>
                 <span className="text-[10px] text-muted-foreground uppercase tracking-widest hidden sm:inline">{c.key}</span>
                 <button type="button" onClick={() => startEdit(c.key, c.label)} className="p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-gold">
                   <Pencil className="h-4 w-4" />
@@ -349,14 +350,14 @@ function CategoriesManager() {
         ))}
       </div>
 
-      <form onSubmit={add} className="flex gap-2">
+      <form onSubmit={add} className="flex flex-col gap-2">
         <input
           value={label}
           onChange={(e) => setLabel(e.target.value)}
           placeholder={isAr ? "اسم القسم الجديد" : "New category name"}
-          className="flex-1 px-4 py-2 bg-input border border-gold/30 rounded-md outline-none focus:border-gold text-sm"
+          className="w-full px-4 py-2 bg-input border border-gold/30 rounded-md outline-none focus:border-gold text-sm"
         />
-        <button type="submit" className="inline-flex items-center gap-2 px-4 py-2 bg-gold text-background text-xs uppercase tracking-widest rounded-md hover:opacity-90">
+        <button type="submit" className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-gold text-background text-xs uppercase tracking-widest rounded-md hover:opacity-90 self-start">
           <Plus className="h-4 w-4" /> {isAr ? "إضافة" : "Add"}
         </button>
       </form>
