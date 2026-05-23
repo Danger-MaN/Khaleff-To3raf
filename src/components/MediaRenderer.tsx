@@ -40,11 +40,95 @@ async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null>
   }
 }
 
+// ------------------- مكون عرض اللقطات -------------------
+interface ThumbnailStripProps {
+  videoElement: HTMLVideoElement | null;
+  onSeek: (time: number) => void;
+  visible: boolean;
+}
+
+function ThumbnailStrip({ videoElement, onSeek, visible }: ThumbnailStripProps) {
+  const [thumbnails, setThumbnails] = useState<string[]>([]);
+  const [duration, setDuration] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const canvasRef = useRef<HTMLCanvasElement>(document.createElement('canvas'));
+  const THUMBNAIL_COUNT = 10; // 10 لقطات
+
+  useEffect(() => {
+    if (!videoElement || !visible) return;
+
+    const generateThumbnails = async () => {
+      setLoading(true);
+      const vid = videoElement;
+      const duration = vid.duration;
+      if (!duration || isNaN(duration)) return;
+      
+      setDuration(duration);
+      const thumbs: string[] = [];
+      const step = duration / THUMBNAIL_COUNT;
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext('2d');
+
+      canvas.width = 160;  // عرض اللقطة
+      canvas.height = 90;  // ارتفاع اللقطة (16:9)
+
+      for (let i = 0; i < THUMBNAIL_COUNT; i++) {
+        const time = step * i;
+        vid.currentTime = time;
+        
+        // انتظار تحميل الإطار
+        await new Promise<void>((resolve) => {
+          const seekedHandler = () => {
+            vid.removeEventListener('seeked', seekedHandler);
+            try {
+              ctx?.drawImage(vid, 0, 0, canvas.width, canvas.height);
+              thumbs.push(canvas.toDataURL('image/jpeg', 0.7));
+            } catch(e) {
+              thumbs.push('');
+            }
+            resolve();
+          };
+          vid.addEventListener('seeked', seekedHandler);
+        });
+      }
+
+      setThumbnails(thumbs);
+      setLoading(false);
+    };
+
+    generateThumbnails();
+  }, [videoElement, visible]);
+
+  if (!visible || loading || thumbnails.length === 0) return null;
+
+  return (
+    <div className="absolute bottom-full left-0 mb-2 flex gap-1 bg-black/90 p-2 rounded-lg overflow-x-auto z-50 max-w-full">
+      {thumbnails.map((thumb, idx) => (
+        <div
+          key={idx}
+          className="flex flex-col items-center cursor-pointer hover:scale-105 transition-transform"
+          onClick={() => onSeek((duration / THUMBNAIL_COUNT) * idx)}
+        >
+          <img
+            src={thumb}
+            alt={`Preview at ${Math.round((duration / THUMBNAIL_COUNT) * idx)}s`}
+            className="w-32 h-18 object-cover rounded border border-gold/50"
+          />
+          <span className="text-[10px] text-white mt-1">
+            {Math.round((duration / THUMBNAIL_COUNT) * idx)}s
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ------------------- المكون الرئيسي -------------------
 export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string }) {
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
+  const [showThumbnails, setShowThumbnails] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<Plyr | null>(null);
 
@@ -121,7 +205,6 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
         },
         speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
         download: false,
-        // تحسين التخزين المؤقت
         storage: { enabled: true, key: 'plyr' },
       });
     };
@@ -137,6 +220,14 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
       playerRef.current = null;
     };
   }, [videoSrc]);
+
+  // دالة للقفز إلى وقت معين في الفيديو
+  const handleSeek = (time: number) => {
+    if (videoRef.current) {
+      videoRef.current.currentTime = time;
+      setShowThumbnails(false);
+    }
+  };
 
   // Loading state
   if (loading) {
@@ -174,9 +265,18 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/30" />;
   }
 
-  // Video with Plyr
+  // Video with Plyr and Thumbnail Strip
   return (
-    <div className="w-full rounded-lg border border-gold/30 bg-black overflow-hidden">
+    <div 
+      className="relative w-full rounded-lg border border-gold/30 bg-black overflow-hidden"
+      onMouseEnter={() => setShowThumbnails(true)}
+      onMouseLeave={() => setShowThumbnails(false)}
+    >
+      <ThumbnailStrip
+        videoElement={videoRef.current}
+        onSeek={handleSeek}
+        visible={showThumbnails}
+      />
       <video
         ref={videoRef}
         className="plyr-react plyr w-full"
