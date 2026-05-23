@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
@@ -59,6 +58,7 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   const isPlayingRef = useRef(isPlaying);
   const thumbnailsLengthRef = useRef(0);
   const goToNextRef = useRef<(() => void) | null>(null);
+  const isSeekingFromTimer = useRef(false);  // لمنع استدعاء onSeek مرتين
   
   const canvasRef = useRef<HTMLCanvasElement>(document.createElement('canvas'));
   const THUMBNAIL_COUNT = 10;
@@ -72,7 +72,14 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
     thumbnailsLengthRef.current = thumbnails.length;
   }, [thumbnails]);
 
-  // دالة التقدم إلى المشهد التالي (تعتمد على ref للطول لتكون ثابتة)
+  // حساب وقت المشهد بناءً على index
+  const getTimeFromIndex = useCallback((index: number) => {
+    if (duration === 0) return 0;
+    const step = duration / THUMBNAIL_COUNT;
+    return step * index;
+  }, [duration]);
+
+  // دالة التقدم إلى المشهد التالي (تغير activeIndex فقط)
   const goToNextThumbnail = useCallback(() => {
     setActiveIndex(prev => {
       const total = thumbnailsLengthRef.current;
@@ -87,16 +94,15 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
     goToNextRef.current = goToNextThumbnail;
   }, [goToNextThumbnail]);
 
-  // مؤقت واحد ثابت يبدأ عند تحميل اللقطات ويتوقف عند إلغاء التثبيت
+  // مؤقت واحد ثابت يبدأ عند تحميل اللقطات
   useEffect(() => {
     if (loading || thumbnails.length === 0) return;
     
-    // إزالة أي مؤقت سابق
     if (intervalRef.current) clearInterval(intervalRef.current);
     
-    // إنشاء مؤقت جديد
     intervalRef.current = setInterval(() => {
       if (isPlayingRef.current && goToNextRef.current) {
+        isSeekingFromTimer.current = true;
         goToNextRef.current();
       }
     }, 3000);
@@ -107,7 +113,17 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
         intervalRef.current = null;
       }
     };
-  }, [loading, thumbnails.length]); // يعاد إنشاؤه فقط عندما تتغير اللقطات (مرة واحدة)
+  }, [loading, thumbnails.length]);
+
+  // عندما يتغير activeIndex، نطلب التمرير إلى التوقيت المناسب (إذا كان التغيير من المؤقت أو من مستخدم)
+  useEffect(() => {
+    if (duration > 0 && thumbnails.length > 0) {
+      const time = getTimeFromIndex(activeIndex);
+      onSeek(time);
+    }
+    // إعادة تعيين العلم بعد الاستدعاء
+    isSeekingFromTimer.current = false;
+  }, [activeIndex, duration, thumbnails.length, onSeek, getTimeFromIndex]);
 
   // توليد اللقطات من الفيديو
   const generateThumbnails = useCallback(async () => {
@@ -150,18 +166,17 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
     setIsPlaying(false);
   }, []);
 
-  // إعادة التشغيل من البداية
+  // إعادة التشغيل من البداية (للمشاهد فقط دون التأثير على الفيديو)
   const restartTimer = useCallback(() => {
-    setActiveIndex(0);      // العودة إلى أول مشهد
+    setActiveIndex(0);      // العودة إلى أول مشهد (سيستدعي useEffect التالي onSeek(0))
     setIsPlaying(true);     // تشغيل التلقائي مرة أخرى
-    // المؤقت سيستمر في العمل، و isPlayingRef سيصبح true الآن
   }, []);
 
   // عند النقر على مشهد معين
   const handleThumbnailClick = useCallback((index: number, time: number) => {
-    stopTimer();
-    setActiveIndex(index);
-    onSeek(time);
+    stopTimer();           // إيقاف التلقائي
+    setActiveIndex(index); // تغيير المؤشر (سيستدعي useEffect التالي onSeek(time))
+    onSeek(time);          // استدعاء مباشر لتجنب أي تأخير (ولن يتكرر لأن onSeek هي نفسها)
   }, [stopTimer, onSeek]);
 
   // إعادة توليد اللقطات عند تغيير الفيديو
@@ -215,7 +230,7 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
       </div>
       <div className="flex gap-2 overflow-x-auto scrollbar-thin scrollbar-track-gray-800 scrollbar-thumb-gold/50 pb-2">
         {thumbnails.map((thumb, idx) => {
-          const time = (duration / THUMBNAIL_COUNT) * idx;
+          const time = getTimeFromIndex(idx);
           const percentage = Math.round((time / duration) * 100);
           const isActive = activeIndex === idx;
           return (
