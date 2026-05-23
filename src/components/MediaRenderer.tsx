@@ -27,7 +27,6 @@ function isTeraboxUrl(url: string): boolean {
   return /(terabox|1024terabox|teraboxapp|dubox|4funbox)\./i.test(url);
 }
 
-// ------------------- جلب الرابط المُتوسط -------------------
 async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null> {
   try {
     const infoRes = await fetch(`/.netlify/functions/streamtape?url=${encodeURIComponent(shareUrl)}`);
@@ -40,7 +39,7 @@ async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null>
   }
 }
 
-// ------------------- مكون عرض اللقطات (مع مؤقت دائري وإعادة تشغيل من البداية) -------------------
+// ------------------- مكون عرض اللقطات (مع حل مشكلة التكرار والاتجاه) -------------------
 interface ThumbnailStripProps {
   videoElement: HTMLVideoElement | null;
   onSeek: (time: number) => void;
@@ -53,45 +52,35 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   const [loading, setLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const isPlayingRef = useRef(isPlaying);
+  const intervalIdRef = useRef<NodeJS.Timeout | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(document.createElement('canvas'));
   const THUMBNAIL_COUNT = 10;
 
-  // تحديث ref عند تغير isPlaying
-  useEffect(() => {
-    isPlayingRef.current = isPlaying;
-  }, [isPlaying]);
-
-  // توليد اللقطات من الفيديو
+  // توليد اللقطات (بدون تغيير)
   const generateThumbnails = useCallback(async () => {
     if (!videoElement) return;
-    
     setLoading(true);
     const vid = videoElement;
     const dur = vid.duration;
     if (!dur || isNaN(dur)) return;
-    
     setDuration(dur);
     const thumbs: string[] = [];
     const step = dur / THUMBNAIL_COUNT;
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
-
     canvas.width = 120;
     canvas.height = 68;
 
     for (let i = 0; i < THUMBNAIL_COUNT; i++) {
       const time = step * i;
       vid.currentTime = time;
-      
       await new Promise<void>((resolve) => {
         const seekedHandler = () => {
           vid.removeEventListener('seeked', seekedHandler);
           try {
             ctx?.drawImage(vid, 0, 0, canvas.width, canvas.height);
             thumbs.push(canvas.toDataURL('image/jpeg', 0.6));
-          } catch(e) {
+          } catch (e) {
             thumbs.push('');
           }
           resolve();
@@ -99,74 +88,80 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
         vid.addEventListener('seeked', seekedHandler);
       });
     }
-
     setThumbnails(thumbs);
     setLoading(false);
   }, [videoElement, THUMBNAIL_COUNT]);
 
-  // بدء المؤتمر الدائري (يتحرك الإطار الذهبي بشكل تلقائي ويعيد الدوران من البداية)
+  // دالة التقدم إلى المشهد التالي (تستخدم في المؤقت)
+  const goToNextThumbnail = useCallback(() => {
+    setActiveIndex((prev) => {
+      const next = prev + 1;
+      if (next >= thumbnails.length) {
+        return 0; // العودة إلى البداية فوراً
+      }
+      return next;
+    });
+  }, [thumbnails.length]);
+
+  // بدء المؤقت (يتحرك للأمام فقط)
   const startTimer = useCallback(() => {
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    
-    intervalRef.current = setInterval(() => {
-      if (!isPlayingRef.current) return;
-      
-      setActiveIndex(prev => {
-        let next = prev + 1;
-        if (next >= THUMBNAIL_COUNT) {
-          next = 0; // العودة إلى البداية - حلقة لا نهائية
-        }
-        return next;
-      });
-    }, 3000); // كل 3 ثوانٍ ينتقل إلى المشهد التالي
-  }, [THUMBNAIL_COUNT]);
+    if (intervalIdRef.current) clearInterval(intervalIdRef.current);
+    intervalIdRef.current = setInterval(() => {
+      if (isPlaying) {
+        goToNextThumbnail();
+      }
+    }, 3000);
+  }, [isPlaying, goToNextThumbnail]);
 
   // إيقاف المؤقت
   const stopTimer = useCallback(() => {
     setIsPlaying(false);
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
+    if (intervalIdRef.current) {
+      clearInterval(intervalIdRef.current);
+      intervalIdRef.current = null;
     }
   }, []);
 
-  // إعادة تشغيل المؤقت من البداية (إعادة تعيين activeIndex إلى 0)
+  // إعادة التشغيل من البداية (المشهد الأول)
   const restartTimer = useCallback(() => {
-    setActiveIndex(0);      // العودة إلى أول مشهد
-    setIsPlaying(true);     // التأكد من أن التشغيل مفعّل
-    // إعادة بدء المؤقت (سيتم استدعاء startTimer في useEffect التالي)
-    // لكننا نريد بدء المؤقت فوراً إذا كان اللقطات جاهزة
-    if (thumbnails.length > 0 && !loading) {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      startTimer();
-    }
-  }, [thumbnails.length, loading, startTimer]);
+    setActiveIndex(0);       // إعادة الضبط إلى أول مشهد
+    setIsPlaying(true);
+    // إعادة تشغيل المؤقت بعد إعادة الضبط
+    if (intervalIdRef.current) clearInterval(intervalIdRef.current);
+    intervalIdRef.current = setInterval(() => {
+      // استخدام isPlaying الحالي (الذي أصبح true)
+      setActiveIndex((prev) => {
+        const next = prev + 1;
+        if (next >= thumbnails.length) {
+          return 0;
+        }
+        return next;
+      });
+    }, 3000);
+  }, [thumbnails.length]);
 
   // عند النقر على مشهد معين
   const handleThumbnailClick = useCallback((index: number, time: number) => {
-    stopTimer();          // إيقاف التلقائي
+    stopTimer();          // يوقف التلقائي
     setActiveIndex(index);
     onSeek(time);
   }, [stopTimer, onSeek]);
 
-  // بدء المؤقت عند تحميل اللقطات (أو عند تغيير حالة التحميل)
+  // بدء المؤقت تلقائياً عند تحميل اللقطات
   useEffect(() => {
     if (!loading && thumbnails.length > 0) {
       startTimer();
     }
-    
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (intervalIdRef.current) clearInterval(intervalIdRef.current);
     };
   }, [loading, thumbnails, startTimer]);
 
-  // إعادة التوليد عند تغيير الفيديو
+  // إعادة توليد اللقطات عند تغيير الفيديو
   useEffect(() => {
     if (!videoElement) return;
-    
     setIsPlaying(true);
     setActiveIndex(0);
-    
     if (videoElement.readyState >= 2) {
       generateThumbnails();
     } else {
@@ -175,7 +170,6 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   }, [videoElement, generateThumbnails]);
 
   if (!isVisible) return null;
-  
   if (loading) {
     return (
       <div className="flex justify-center items-center gap-2 mt-3 p-2 bg-black/50 rounded-lg">
@@ -184,7 +178,6 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
       </div>
     );
   }
-
   if (thumbnails.length === 0) return null;
 
   const formatTime = (seconds: number) => {
@@ -195,7 +188,6 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
 
   return (
     <div className="mt-3 w-full">
-      {/* شريط الحالة */}
       <div className="flex justify-between items-center mb-2 px-1">
         <div className="flex items-center gap-3">
           <span className="text-[11px] text-white/60">
@@ -214,14 +206,11 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
           </button>
         )}
       </div>
-      
-      {/* شريط المشاهد الثابت (بدون حركة) */}
       <div className="flex gap-2 overflow-x-auto scrollbar-thin scrollbar-track-gray-800 scrollbar-thumb-gold/50 pb-2">
         {thumbnails.map((thumb, idx) => {
           const time = (duration / THUMBNAIL_COUNT) * idx;
           const percentage = Math.round((time / duration) * 100);
           const isActive = activeIndex === idx;
-          
           return (
             <button
               key={idx}
@@ -264,7 +253,7 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   );
 }
 
-// ------------------- المكون الرئيسي -------------------
+// ------------------- المكون الرئيسي (بدون تغيير) -------------------
 export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string }) {
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -322,7 +311,6 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
 
     const initializePlayer = () => {
       if (!videoRef.current) return;
-      
       playerRef.current = new Plyr(videoRef.current, {
         controls: [
           "play-large", "play", "progress", "current-time", "duration",
@@ -335,7 +323,6 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
         download: false,
         storage: { enabled: true, key: 'plyr' },
       });
-      
       setPlayerReady(true);
     };
 
@@ -406,7 +393,6 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
           <source src={videoSrc} type="video/mp4" />
           متصفحك لا يدعم تشغيل الفيديو.
         </video>
-        
         {playerReady && (
           <ThumbnailStrip
             videoElement={videoRef.current}
