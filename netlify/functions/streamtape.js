@@ -1,8 +1,8 @@
 exports.handler = async (event) => {
   const headers = {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, Range',
+    'Access-Control-Expose-Headers': 'Content-Range, Accept-Ranges',
   };
 
   if (event.httpMethod === 'OPTIONS') {
@@ -59,6 +59,7 @@ exports.handler = async (event) => {
     }
 
     const { ticket, wait_time = 0 } = ticketData.result;
+    console.log(`Ticket obtained, wait_time: ${wait_time}`);
 
     if (wait_time > 0) {
       await new Promise(resolve => setTimeout(resolve, wait_time * 1000));
@@ -74,33 +75,52 @@ exports.handler = async (event) => {
     }
 
     const directVideoUrl = dlData.result.url;
-    console.log(`Direct URL obtained`);
+    console.log(`Direct URL obtained: ${directVideoUrl.substring(0, 100)}...`);
 
-    // إذا كان طلب توسيط الفيديو (direct=1)
     if (isDirectRequest) {
-      console.log(`Proxying video...`);
-      const videoRes = await fetch(directVideoUrl, {
-        headers: { 'User-Agent': 'Mozilla/5.0' }
-      });
+      // الحصول على رأس Range من الطلب (إذا وجد)
+      const rangeHeader = event.headers.range || event.headers.Range;
+      console.log(`Range header: ${rangeHeader || 'none'}`);
 
-      if (!videoRes.ok) throw new Error(`HTTP ${videoRes.status}`);
+      // إعداد رؤوس الطلب للفيديو الأصلي
+      const videoFetchHeaders = { 'User-Agent': 'Mozilla/5.0' };
+      if (rangeHeader) {
+        videoFetchHeaders['Range'] = rangeHeader;
+      }
 
-      const buffer = await videoRes.arrayBuffer();
-      console.log(`Video size: ${buffer.byteLength} bytes`);
+      // جلب الفيديو أو الجزء المطلوب منه
+      const videoRes = await fetch(directVideoUrl, { headers: videoFetchHeaders });
+
+      if (!videoRes.ok && videoRes.status !== 206) {
+        throw new Error(`Failed to fetch video: ${videoRes.status}`);
+      }
+
+      const videoBuffer = await videoRes.arrayBuffer();
+      console.log(`Video chunk size: ${videoBuffer.byteLength} bytes, status: ${videoRes.status}`);
+
+      // إعداد رؤوس الاستجابة المناسبة
+      const responseHeaders = {
+        ...headers,
+        'Content-Type': videoRes.headers.get('content-type') || 'video/mp4',
+        'Content-Disposition': 'inline',
+        'Accept-Ranges': 'bytes',
+        'Content-Length': videoRes.headers.get('content-length') || videoBuffer.byteLength,
+      };
+
+      // إذا كان الرد جزئياً (status 206)، نضيف رؤوس النطاق
+      if (videoRes.status === 206) {
+        responseHeaders['Content-Range'] = videoRes.headers.get('content-range');
+        responseHeaders['Content-Length'] = videoRes.headers.get('content-length');
+      }
 
       return {
-        statusCode: 200,
-        headers: {
-          ...headers,
-          'Content-Type': videoRes.headers.get('content-type') || 'video/mp4',
-          'Content-Disposition': 'inline',
-        },
-        body: Buffer.from(buffer).toString('base64'),
+        statusCode: videoRes.status,
+        headers: responseHeaders,
+        body: Buffer.from(videoBuffer).toString('base64'),
         isBase64Encoded: true,
       };
     }
 
-    // إرجاع الرابط المباشر
     return {
       statusCode: 200,
       headers,
