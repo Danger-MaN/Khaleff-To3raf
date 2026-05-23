@@ -1,5 +1,7 @@
-"use client";
-import { useState } from "react";
+interface Props {
+  url?: string;
+  alt?: string;
+}
 
 function getYouTubeId(url: string): string | null {
   const patterns = [
@@ -15,51 +17,102 @@ function getYouTubeId(url: string): string | null {
   return null;
 }
 
-function isTeraboxUrl(url: string): boolean {
-  return /(terabox|1024terabox|teraboxapp|dubox|4funbox)\./i.test(url);
+// دالة متطورة لاستخراج الـ ID أو الـ SURL من روابط تيرابوكس المختلفة
+function getTeraboxId(url: string): string | null {
+  if (!/(terabox|teraboxapp|terabox\.app|1024terabox|dubox|4funbox|mirrobox|nephobox|momerybox|tibibox|sharebox)\./i.test(url)) {
+    return null;
+  }
+  const patterns = [
+    /[?&]surl=([a-zA-Z0-9_-]+)/,
+    /\/s\/1?([a-zA-Z0-9_-]+)/,
+    /\/sharing\/link\?surl=([a-zA-Z0-9_-]+)/,
+  ];
+  for (const p of patterns) {
+    const m = url.match(p);
+    if (m) return m[1];
+  }
+  // إذا لم يجد نمطاً، يحاول أخذ الجزء الأخير من الرابط كـ ID احتياطي
+  try {
+    const parts = url.split('/');
+    return parts[parts.length - 1].split('?')[0];
+  } catch {
+    return null;
+  }
 }
 
-export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string }) {
+export function MediaRenderer({ url, alt = "" }: Props) {
   if (!url) return null;
 
-  const ytId = getYouTubeId(url);
-  if (ytId) {
+  // 1. التحقق من يوتيوب
+  const yt = getYouTubeId(url);
+  if (yt) {
     return (
-      <div style={{ aspectRatio: "16/9" }} className="relative w-full rounded-lg border border-gold/30 overflow-hidden">
-        <iframe src={`https://www.youtube.com/embed/${ytId}`} className="absolute inset-0 w-full h-full" allowFullScreen />
-      </div>
-    );
-  }
-
-  if (isTeraboxUrl(url)) {
-    const embedUrl = `/.netlify/functions/terabox?embed=1&url=${encodeURIComponent(url)}`;
-    return (
-      <div style={{ aspectRatio: "16/9" }} className="relative w-full rounded-lg border border-gold/30 overflow-hidden bg-black">
+      <div className="relative w-full overflow-hidden rounded-lg shadow-mystic border border-gold/30" style={{ aspectRatio: "16/9" }}>
         <iframe
-          src={embedUrl}
-          className="absolute inset-0 w-full h-full"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+          src={`https://www.youtube.com/embed/${yt}`}
+          title="YouTube video"
+          className="absolute inset-0 h-full w-full"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           allowFullScreen
-          sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-modals"
         />
-        <a
-          href={url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="absolute bottom-2 right-2 text-xs px-2 py-1 rounded bg-black/70 text-white z-10 hover:bg-black/90"
-        >
-          فتح في Terabox ↗
-        </a>
       </div>
     );
   }
 
-  if (/\.(mp4|webm|mov|ogg)/i.test(url)) {
-    return <video controls className="w-full" style={{ aspectRatio: "16/9" }}><source src={url} /></video>;
+  // 2. التحقق من Terabox
+  const tbId = getTeraboxId(url);
+  if (tbId) {
+    /* ملاحظة هامة بناءً على الفيديو [00:27:49]:
+      الروابط المباشرة من تيرابوكس تحتاج خادم خلفي (Backend API) لتوليد رابط مباشر يدعم الـ Streaming.
+      يمكنك استخدام الـ API المباشر للمشغل المخصص المتوفر في الفيديو بالشكل التالي:
+    */
+    const directStreamUrl = `https://terabox.tech/api/watch?id=${tbId}`; 
+    // ملاحظة: استبدل النطاق أعلاه برابط الـ API الخاص بك أو الـ API المستخدم في الشرح
+
+    return (
+      <div className="relative w-full overflow-hidden rounded-lg shadow-mystic border border-gold/30 bg-black" style={{ aspectRatio: "16/9" }}>
+        <video
+          src={directStreamUrl}
+          controls
+          poster={`https://terabox.tech/api/thumbnail?id=${tbId}`} // جلب الصورة المصغرة للملف إن وجدت [00:31:24]
+          className="absolute inset-0 h-full w-full"
+          preload="metadata"
+        />
+        <div className="absolute bottom-2 end-2 flex gap-2">
+          <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[10px] uppercase tracking-widest px-2 py-1 rounded bg-background/70 text-gold border border-gold/30 hover:bg-background"
+          >
+            Terabox Link ↗
+          </a>
+        </div>
+      </div>
+    );
   }
 
-  if (/\.(jpg|jpeg|png|gif|webp|avif)/i.test(url)) {
-    return <img src={url} alt={alt} className="w-full rounded-lg" />;
+  // 3. التحقق من روابط الفيديو المباشرة الأخرى
+  if (/\.(mp4|webm|ogg|mov)(\?|$)/i.test(url)) {
+    return (
+      <video
+        src={url}
+        controls
+        className="w-full rounded-lg shadow-mystic border border-gold/30 bg-black"
+      />
+    );
+  }
+
+  // 4. التحقق من الصور
+  if (/\.(jpe?g|png|webp|gif|avif|svg)(\?|$)/i.test(url) || /^https?:\/\//.test(url)) {
+    return (
+      <img
+        src={url}
+        alt={alt}
+        loading="lazy"
+        className="w-full rounded-lg shadow-mystic border border-gold/30 object-cover"
+      />
+    );
   }
 
   return null;
