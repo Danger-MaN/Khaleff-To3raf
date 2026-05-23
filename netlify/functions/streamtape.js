@@ -1,91 +1,134 @@
-exports.handler = async (event) => {
+const fetch = require('node-fetch');
+
+exports.handler = async (event, context) => {
+  // 1. ضبط الرؤوس الأساسية و CORS
   const headers = {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
   };
 
+  // 2. التعامل مع طلبات OPTIONS (pre-flight)
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 204, headers };
   }
 
-  const shareUrl = event.queryStringParameters?.url;
-  const isVideoRequest = event.queryStringParameters?.video === '1';
+  // 3. الحصول على معاملات الطلب
+  const params = event.queryStringParameters;
+  const videoUrlOrId = params?.url;
+  const isDirectRequest = params?.direct === '1';
 
-  if (!shareUrl) {
-    return { statusCode: 400, body: 'Missing URL' };
+  // 4. التحقق من وجود رابط أو معرف الفيديو
+  if (!videoUrlOrId) {
+    return {
+      statusCode: 400,
+      headers,
+      body: JSON.stringify({ error: 'Missing video URL or ID' }),
+    };
+  }
+
+  // 5. الحصول على بيانات API المحمية من متغيرات البيئة
+  const apiLogin = process.env.STREAMTAPE_API_LOGIN;
+  const apiKey = process.env.STREAMTAPE_API_KEY;
+
+  if (!apiLogin || !apiKey) {
+    console.error('Streamtape API credentials are not set in environment variables.');
+    return {
+      statusCode: 500,
+      headers,
+      body: JSON.stringify({ error: 'Server configuration error' }),
+    };
   }
 
   try {
-    // استخراج معرّف الفيديو من الرابط
-    const videoIdMatch = shareUrl.match(/streamtape\.com\/v\/([a-zA-Z0-9]+)/);
-    if (!videoIdMatch) throw new Error('Invalid StreamTape URL');
-    const videoId = videoIdMatch[1];
-    
-    // جلب صفحة الفيديو
-    const pageUrl = `https://streamtape.com/v/${videoId}`;
-    const pageRes = await fetch(pageUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
-    });
-    const html = await pageRes.text();
-
-    // استخراج الرابط المباشر
-    // StreamTape يضع الرابط عادة في عنصر video source أو في متغير JavaScript
-    let videoUrl = null;
-    
-    // محاولة 1: البحث عن source src
-    const srcMatch = html.match(/<source\s+src="([^"]+\.mp4[^"]*)"/i);
-    if (srcMatch) videoUrl = srcMatch[1];
-    
-    // محاولة 2: البحث عن رابط mp4
-    if (!videoUrl) {
-      const mp4Match = html.match(/https?:\/\/[^\s"'<>]+\.mp4[^\s"'<>]*/i);
-      if (mp4Match) videoUrl = mp4Match[0];
-    }
-    
-    // محاولة 3: البحث في كود JavaScript (نمط شائع)
-    if (!videoUrl) {
-      const jsMatch = html.match(/file\s*:\s*"([^"]+\.mp4[^"]+)"/i);
-      if (jsMatch) videoUrl = jsMatch[1];
+    // 6. استخراج معرف الفيديو (File ID)
+    let fileId = null;
+    // إذا كان المُدخل رابطاً كاملاً، نستخرج الـ ID منه
+    if (videoUrlOrId.includes('streamtape.com/v/')) {
+      const match = videoUrlOrId.match(/streamtape\.com\/v\/([a-zA-Z0-9]+)/);
+      if (match && match[1]) fileId = match[1];
+    } else {
+      // إذا كان المُدخل هو الـ ID مباشرة
+      fileId = videoUrlOrId;
     }
 
-    if (!videoUrl) {
-      console.error('Could not extract video URL. HTML snippet:', html.substring(0, 500));
-      throw new Error('No video URL found');
+    if (!fileId) {
+      throw new Error('Invalid Streamtape URL or ID. Could not extract file ID.');
     }
 
-    console.log(`Found video URL: ${videoUrl.substring(0, 100)}...`);
+    console.log(`Processing Streamtape file ID: ${fileId}`);
 
-    // إذا كان الطلب هو الفيديو نفسه (للوساطة)
-    if (isVideoRequest) {
-      const videoRes = await fetch(videoUrl, {
+    // 7. الخطوة الأولى من API: الحصول على تذكرة التحميل (Download Ticket)
+    const ticketUrl = `https://api.streamtape.com/file/dlticket?file=${fileId}&login=${apiLogin}&key=${apiKey}`;
+    const ticketResponse = await fetch(ticketUrl);
+    const ticketData = await ticketResponse.json();
+
+    if (ticketData.status !== 200 || !ticketData.result || !ticketData.result.ticket) {
+      console.error('Failed to get download ticket:', ticketData);
+      throw new Error(ticketData.msg || 'Failed to obtain download ticket');
+    }
+
+    const { ticket, wait_time = 0 } = ticketData.result;
+    console.log(`Download ticket obtained. Wait time: ${wait_time} seconds.`);
+
+    // 8. الخطوة الثانية من API: الحصول على رابط التحميل المباشر
+    // إذا كان هناك وقت انتظار (wait_time)، ننتظر قليلاً قبل طلب الرابط
+    if (wait_time > 0) {
+      console.log(`Waiting for ${wait_time} seconds as instructed by API...`);
+      await new Promise(resolve => setTimeout(resolve, wait_time * 1000));
+    }
+
+    const downloadUrl = `https://api.streamtape.com/file/dl?file=${fileId}&ticket=${ticket}`;
+    const downloadResponse = await fetch(downloadUrl);
+    const downloadData = await downloadResponse.json();
+
+    if (downloadData.status !== 200 || !downloadData.result || !downloadData.result.url) {
+      console.error('Failed to get download link:', downloadData);
+      throw new Error(downloadData.msg || 'Failed to obtain download link');
+    }
+
+    const directVideoUrl = downloadData.result.url;
+    console.log(`Direct video URL obtained.`);
+
+    // 9. التعامل مع الطلب بناءً على نوعه
+    // إذا كان طلبًا مباشرًا للفيديو (direct=1)، نقوم بتوسيطه
+    if (isDirectRequest) {
+      console.log(`Proxying video from ${directVideoUrl}`);
+      const videoResponse = await fetch(directVideoUrl, {
         headers: { 'User-Agent': 'Mozilla/5.0' }
       });
-      const buffer = await videoRes.arrayBuffer();
+
+      if (!videoResponse.ok) {
+        throw new Error(`Failed to fetch video: ${videoResponse.status}`);
+      }
+
+      const videoBuffer = await videoResponse.buffer();
+      console.log(`Video fetched successfully. Size: ${videoBuffer.length} bytes`);
+
+      // نعيد الفيديو مع الرؤوس الصحيحة
       return {
         statusCode: 200,
         headers: {
           ...headers,
-          'Content-Type': 'video/mp4',
+          'Content-Type': videoResponse.headers.get('content-type') || 'video/mp4',
           'Content-Disposition': 'inline',
         },
-        body: Buffer.from(buffer).toString('base64'),
+        body: videoBuffer.toString('base64'),
         isBase64Encoded: true,
       };
+    } else {
+      // إذا كان طلب معلومات (بدون direct=1)، نعيد الرابط المباشر
+      return {
+        statusCode: 200,
+        headers,
+        body: JSON.stringify({ success: true, direct_url: directVideoUrl }),
+      };
     }
-
-    // إرجاع الرابط المباشر
-    return {
-      statusCode: 200,
-      headers,
-      body: JSON.stringify({ success: true, video_url: videoUrl }),
-    };
-  } catch (err) {
-    console.error('Error:', err.message);
+  } catch (error) {
+    console.error('Streamtape function error:', error);
     return {
       statusCode: 500,
-      body: JSON.stringify({ success: false, error: err.message }),
       headers,
+      body: JSON.stringify({ success: false, error: error.message }),
     };
   }
 };
