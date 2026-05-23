@@ -13,7 +13,6 @@
   },
   "dependencies": {
     "@netlify/vite-plugin-tanstack-start": "^1.0.0",
-    "node-fetch": "^2.7.0",
     
     "@cloudflare/vite-plugin": "^1.25.5",
     "@hookform/resolvers": "^5.2.2",
