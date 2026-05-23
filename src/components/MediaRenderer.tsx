@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 
+// دوال مساعدة كما هي
 function getYouTubeId(url: string): string | null {
   const patterns = [
     /youtu\.be\/([a-zA-Z0-9_-]{11})/,
@@ -21,9 +22,12 @@ function isTeraboxUrl(url: string): boolean {
 
 async function getProxiedVideoUrl(shareUrl: string): Promise<string | null> {
   try {
-    const res = await fetch(`/.netlify/functions/terabox?url=${encodeURIComponent(shareUrl)}`);
-    const data = await res.json();
-    if (!data.success) return null;
+    // 1. احصل على الرابط المباشر أولاً
+    const infoRes = await fetch(`/.netlify/functions/terabox?url=${encodeURIComponent(shareUrl)}`);
+    const infoData = await infoRes.json();
+    if (!infoData.success) return null;
+    
+    // 2. قم بإنشاء رابط بروكسي لهذا الفيديو
     return `/.netlify/functions/terabox?video=1&url=${encodeURIComponent(shareUrl)}`;
   } catch (err) {
     console.error(err);
@@ -52,21 +56,19 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
       let active = true;
       setLoading(true);
       setError(false);
-      getProxiedVideoUrl(url)
-        .then(src => {
-          if (!active) return;
-          if (src) setVideoSrc(src);
-          else setError(true);
-          setLoading(false);
-        })
-        .catch(() => {
-          if (active) setError(true);
-          setLoading(false);
-        });
+      getProxiedVideoUrl(url).then(src => {
+        if (!active) return;
+        if (src) setVideoSrc(src);
+        else setError(true);
+        setLoading(false);
+      }).catch(() => {
+        if (active) setError(true);
+        setLoading(false);
+      });
       return () => { active = false; };
     }, [url]);
 
-    if (loading) return <div className="p-8 text-center">جاري تحميل الفيديو...</div>;
+    if (loading) return <div className="p-8 text-center">جاري تجهيز الفيديو...</div>;
     if (error || !videoSrc) {
       return (
         <div className="p-8 text-center text-red-400">
