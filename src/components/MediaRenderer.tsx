@@ -46,8 +46,8 @@ interface ThumbnailStripProps {
   isVisible?: boolean;
 }
 
-// مدة التحرك بين المشاهد (بالمللي ثانية) - ثابتة ومتساوية
-const SEEK_INTERVAL_MS = 2000; // 3 ثوانٍ بين كل مشهد وآخر
+const SEEK_INTERVAL_MS = 3000; // 3 ثوانٍ بين المشاهد
+const THUMBNAIL_COUNT = 10;
 
 function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStripProps) {
   const [thumbnails, setThumbnails] = useState<string[]>([]);
@@ -60,10 +60,11 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   const isPlayingRef = useRef(isPlaying);
   const thumbnailsLengthRef = useRef(0);
   const goToNextRef = useRef<(() => void) | null>(null);
+  const videoElementRef = useRef(videoElement);
   
   const canvasRef = useRef<HTMLCanvasElement>(document.createElement('canvas'));
-  const THUMBNAIL_COUNT = 10;
 
+  // مزامنة refs
   useEffect(() => {
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
@@ -72,13 +73,16 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
     thumbnailsLengthRef.current = thumbnails.length;
   }, [thumbnails]);
 
+  useEffect(() => {
+    videoElementRef.current = videoElement;
+  }, [videoElement]);
+
   const getTimeFromIndex = useCallback((index: number) => {
     if (duration === 0) return 0;
     const step = duration / THUMBNAIL_COUNT;
     return step * index;
   }, [duration]);
 
-  // التقدم إلى المشهد التالي (يتغير activeIndex فقط)
   const goToNextThumbnail = useCallback(() => {
     setActiveIndex(prev => {
       const total = thumbnailsLengthRef.current;
@@ -92,28 +96,38 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
     goToNextRef.current = goToNextThumbnail;
   }, [goToNextThumbnail]);
 
-  // مؤقت واحد ثابت يبدأ عند تحميل اللقطات، الفاصل الزمني ثابت = SEEK_INTERVAL_MS
+  // بدء المؤقت (مرة واحدة بعد تحميل اللقطات)
   useEffect(() => {
     if (loading || thumbnails.length === 0) return;
-    
     if (intervalRef.current) clearInterval(intervalRef.current);
-    
-    // setInterval يضمن فاصل زمني ثابت بين التغييرات
     intervalRef.current = setInterval(() => {
       if (isPlayingRef.current && goToNextRef.current) {
-        goToNextRef.current();   // تغيير activeIndex -> سيؤدي إلى استدعاء onSeek في useEffect أدناه
+        goToNextRef.current();
       }
     }, SEEK_INTERVAL_MS);
-    
     return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
+      if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, [loading, thumbnails.length]);
 
-  // عند تغير activeIndex، يتم الانتقال بالفيديو إلى التوقيت المناسب
+  // استماع لحدث play على الفيديو: إيقاف التلقائي بشكل مطلق
+  useEffect(() => {
+    const video = videoElementRef.current;
+    if (!video) return;
+    
+    const handlePlay = () => {
+      if (isPlayingRef.current) {
+        setIsPlaying(false); // إيقاف التلقائي نهائياً
+      }
+    };
+    
+    video.addEventListener('play', handlePlay);
+    return () => {
+      video.removeEventListener('play', handlePlay);
+    };
+  }, []);
+
+  // عند تغيير activeIndex -> التمرير في الفيديو
   useEffect(() => {
     if (duration > 0 && thumbnails.length > 0) {
       const time = getTimeFromIndex(activeIndex);
@@ -121,7 +135,7 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
     }
   }, [activeIndex, duration, thumbnails.length, onSeek, getTimeFromIndex]);
 
-  // توليد اللقطات (نفس الكود السابق)
+  // توليد اللقطات
   const generateThumbnails = useCallback(async () => {
     if (!videoElement) return;
     setLoading(true);
@@ -198,7 +212,7 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
       <div className="flex justify-between items-center mb-2 px-1">
         <div className="flex items-center gap-3">
           <span className="text-[11px] text-white/60">
-            {isPlaying ? `🔄 تسليط ضوء تلقائي (كل ${SEEK_INTERVAL_MS/1000} ثانية)` : '⏸️ توقف مؤقت'}
+            {isPlaying ? `🔄 تسليط ضوء تلقائي (كل ${SEEK_INTERVAL_MS/1000} ثانية)` : '⏸️ توقف مؤقت (شغّل الفيديو لإيقاف دائم)'}
           </span>
           <span className="text-[11px] text-gold/80">
             {activeIndex + 1} / {THUMBNAIL_COUNT}
@@ -231,7 +245,7 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   );
 }
 
-// ------------------- المكون الرئيسي (بدون تغيير) -------------------
+// ------------------- المكون الرئيسي -------------------
 export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string }) {
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -325,17 +339,29 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
 
   if (loading) return <div className="p-8 text-center text-gold">جاري تجهيز الفيديو...</div>;
   if (error || !videoSrc) return <div className="p-8 text-center text-red-400">لا يمكن عرض الفيديو. <a href={url} target="_blank" rel="noopener noreferrer" className="underline">فتح الرابط ↗</a></div>;
-  if (videoSrc.includes("youtube.com/embed")) return <div style={{ aspectRatio: "16/9" }} className="relative w-full rounded-lg border border-gold/30 overflow-hidden"><iframe src={videoSrc} className="absolute inset-0 w-full h-full" allowFullScreen allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" /></div>;
-  if (/\.(jpg|jpeg|png|gif|webp|avif)/i.test(videoSrc)) return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/30" />;
+  if (videoSrc.includes("youtube.com/embed")) return <div style={{ aspectRatio: "16/9" }} className="relative w-full rounded-lg border border-gold/20 overflow-hidden"><iframe src={videoSrc} className="absolute inset-0 w-full h-full" allowFullScreen allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" /></div>;
+  if (/\.(jpg|jpeg|png|gif|webp|avif)/i.test(videoSrc)) return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/20" />;
 
   return (
-    <div className="w-full rounded-lg border border-gold/30 bg-black overflow-hidden">
+    <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
       <div className="p-2">
-        <video ref={videoRef} className="plyr-react plyr w-full rounded-lg" playsInline crossOrigin="anonymous" preload="metadata">
+        <video
+          ref={videoRef}
+          className="plyr-react plyr w-full rounded-lg"
+          playsInline
+          crossOrigin="anonymous"
+          preload="metadata"
+        >
           <source src={videoSrc} type="video/mp4" />
           متصفحك لا يدعم تشغيل الفيديو.
         </video>
-        {playerReady && <ThumbnailStrip videoElement={videoRef.current} onSeek={handleSeek} isVisible={true} />}
+        {playerReady && (
+          <ThumbnailStrip
+            videoElement={videoRef.current}
+            onSeek={handleSeek}
+            isVisible={true}
+          />
+        )}
       </div>
     </div>
   );
