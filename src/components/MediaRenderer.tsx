@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import Plyr from "plyr";
 import "plyr/dist/plyr.css";
+import type { VideoAspect } from "@/lib/articles";
 
 // ------------------- دوال مساعدة -------------------
 function getYouTubeId(url: string): string | null {
@@ -205,14 +206,14 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   );
 }
 
-// ------------------- المكون الرئيسي (بدون أي قيود على الأبعاد) -------------------
+// ------------------- المكون الرئيسي -------------------
 interface MediaRendererProps {
   url?: string;
   alt?: string;
-  aspect?: string; // 'auto' | '16:9' | '9:16' | '1:1' | '4:3' | '21:9'
+  videoAspect?: VideoAspect;
 }
 
-export function MediaRenderer({ url, alt = "", aspect = "auto" }: MediaRendererProps) {
+export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRendererProps) {
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
@@ -220,15 +221,7 @@ export function MediaRenderer({ url, alt = "", aspect = "auto" }: MediaRendererP
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<Plyr | null>(null);
 
-  const getAspectStyle = (): React.CSSProperties => {
-    if (aspect === "auto") return {};
-    const [w, h] = aspect.split(":");
-    if (w && h) {
-      return { aspectRatio: `${w} / ${h}` };
-    }
-    return {};
-  };
-
+  // تحديد مصدر المحتوى
   useEffect(() => {
     setVideoSrc(null);
     setError(false);
@@ -281,6 +274,7 @@ export function MediaRenderer({ url, alt = "", aspect = "auto" }: MediaRendererP
     setError(true);
   }, [url]);
 
+  // تهيئة Plyr للفيديو المباشر فقط
   useEffect(() => {
     if (!videoRef.current) return;
     if (!videoSrc) return;
@@ -314,12 +308,11 @@ export function MediaRenderer({ url, alt = "", aspect = "auto" }: MediaRendererP
   if (loading) return <div className="p-8 text-center text-gold">جاري تجهيز الفيديو...</div>;
   if (error || !videoSrc) return <div className="p-8 text-center text-red-400">لا يمكن عرض المحتوى. <a href={url} target="_blank" rel="noopener noreferrer" className="underline">فتح الرابط ↗</a></div>;
 
-  // YouTube / Google Drive (مع دعم نسبة العرض المختارة)
+  // YouTube / Google Drive (نسبة 16:9 افتراضية)
   if (videoSrc.includes('youtube.com/embed') || videoSrc.includes('drive.google.com/file/d/')) {
-    const aspectStyle = getAspectStyle();
     return (
       <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
-        <div className="relative w-full" style={aspectStyle}>
+        <div className="relative w-full" style={{ aspectRatio: '16/9' }}>
           <iframe
             src={videoSrc}
             className="absolute inset-0 w-full h-full"
@@ -336,17 +329,31 @@ export function MediaRenderer({ url, alt = "", aspect = "auto" }: MediaRendererP
     return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/20" />;
   }
 
+  // تحديد نمط الحاوية بناءً على videoAspect
+  let containerStyle: React.CSSProperties = { display: 'flex', justifyContent: 'center' };
+  let videoStyle: React.CSSProperties = { display: 'block', objectFit: 'contain', maxWidth: '100%', maxHeight: '80vh' };
+
+  if (videoAspect === "landscape") {
+    containerStyle = { aspectRatio: '16/9', maxWidth: '100%' };
+    videoStyle = { width: '100%', height: '100%', objectFit: 'contain' };
+  } else if (videoAspect === "portrait") {
+    containerStyle = { aspectRatio: '9/16', maxHeight: '80vh', width: 'auto', margin: '0 auto' };
+    videoStyle = { width: '100%', height: '100%', objectFit: 'contain' };
+  } else {
+    // auto: الحاوية تأخذ حجم الفيديو الأصلي
+    containerStyle = { display: 'flex', justifyContent: 'center' };
+    videoStyle = { display: 'block', width: 'auto', height: 'auto', maxWidth: '100%', maxHeight: '80vh', objectFit: 'contain' };
+  }
+
   // الفيديو المباشر
-  const aspectStyle = getAspectStyle();
   return (
     <div className="w-full bg-black rounded-lg border border-gold/20 overflow-hidden">
-      <div className="flex justify-center" style={aspectStyle}>
+      <div style={containerStyle} className="w-full">
         <video
           ref={videoRef}
-          controls
-          className="w-full h-auto"
-          style={{ maxHeight: '80vh', width: 'auto', objectFit: 'contain' }}
+          style={videoStyle}
           playsInline
+          crossOrigin="anonymous"
           preload="metadata"
         >
           <source src={videoSrc} type="video/mp4" />
