@@ -58,8 +58,7 @@ async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null>
   }
 }
 
-// ------------------- مكون عرض اللقطات (ThumbnailStrip) -------------------
-// (نفس الكود السابق دون تغيير - اختصاراً)
+// ------------------- مكون عرض اللقطات -------------------
 interface ThumbnailStripProps {
   videoElement: HTMLVideoElement | null;
   onSeek: (time: number) => void;
@@ -81,7 +80,6 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   const activeIndexRef = useRef(activeIndex);
   const thumbnailsLengthRef = useRef(0);
   const durationRef = useRef(0);
-  
   const canvasRef = useRef<HTMLCanvasElement>(document.createElement('canvas'));
 
   useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
@@ -92,8 +90,7 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   const goToNextThumbnail = useCallback(() => {
     const total = thumbnailsLengthRef.current;
     if (total === 0) return;
-    const next = (activeIndexRef.current + 1) % total;
-    setActiveIndex(next);
+    setActiveIndex((activeIndexRef.current + 1) % total);
   }, []);
 
   useEffect(() => {
@@ -210,13 +207,12 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   );
 }
 
-// ------------------- المكون الرئيسي -------------------
+// ------------------- المكون الرئيسي (النسخة النهائية الموثوقة) -------------------
 export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string }) {
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [playerReady, setPlayerReady] = useState(false);
-  const [isPortrait, setIsPortrait] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<Plyr | null>(null);
 
@@ -225,7 +221,6 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     setVideoSrc(null);
     setError(false);
     setPlayerReady(false);
-    setIsPortrait(false);
     if (!url) return;
 
     const ytId = getYouTubeId(url);
@@ -274,22 +269,6 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     setError(true);
   }, [url]);
 
-  // تحديد إذا كان الفيديو طويلاً (نسبة الارتفاع إلى العرض > 1.2)
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !videoSrc) return;
-    if (videoSrc.includes('youtube.com/embed') || videoSrc.includes('drive.google.com/file/d/')) return;
-
-    const updateOrientation = () => {
-      if (video.videoWidth && video.videoHeight) {
-        setIsPortrait(video.videoHeight / video.videoWidth > 1.2);
-      }
-    };
-    video.addEventListener('loadedmetadata', updateOrientation);
-    if (video.readyState >= 1) updateOrientation();
-    return () => video.removeEventListener('loadedmetadata', updateOrientation);
-  }, [videoSrc]);
-
   // تهيئة Plyr
   useEffect(() => {
     if (!videoRef.current) return;
@@ -323,7 +302,7 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
   if (loading) return <div className="p-8 text-center text-gold">جاري تجهيز الفيديو...</div>;
   if (error || !videoSrc) return <div className="p-8 text-center text-red-400">لا يمكن عرض المحتوى. <a href={url} target="_blank" rel="noopener noreferrer" className="underline">فتح الرابط ↗</a></div>;
 
-  // حالة iframe (YouTube أو Google Drive)
+  // iframe (YouTube, Drive)
   if (videoSrc.includes('youtube.com/embed') || videoSrc.includes('drive.google.com/file/d/')) {
     return (
       <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
@@ -339,34 +318,30 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     );
   }
 
-  // حالة الصور
+  // الصور
   if (/\.(jpg|jpeg|png|gif|webp|avif)/i.test(videoSrc)) {
     return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/20" />;
   }
 
-  // حالة الفيديو المباشر
-  // إذا كان الفيديو عمودياً، نجعل الحاوية تنكمش إلى عرض الفيديو باستخدام inline-flex
-  // وإلا نعرضها بعرض كامل
+  // الفيديو المباشر - الحل السحري: fit-content و auto dimensions
   return (
     <div className="w-full bg-black overflow-hidden rounded-lg">
+      {/* توسيط الفيديو وحاوية تنكمش لحجمه */}
       <div className="flex justify-center">
         <div
-          className="relative rounded-lg overflow-hidden border border-gold/20"
-          style={{
-            display: isPortrait ? 'inline-block' : 'block',
-            width: isPortrait ? 'auto' : '100%',
-            maxWidth: '100%',
-          }}
+          className="rounded-lg overflow-hidden border border-gold/20"
+          style={{ width: 'fit-content', maxWidth: '100%' }}
         >
           <video
             ref={videoRef}
-            className="block"
             style={{
-              width: isPortrait ? 'auto' : '100%',
-              height: isPortrait ? '80vh' : 'auto',
+              display: 'block',
+              width: 'auto',
+              height: 'auto',
               maxWidth: '100%',
-              maxHeight: '80vh',
+              maxHeight: '90vh',
               objectFit: 'contain',
+              margin: '0 auto',
             }}
             playsInline
             crossOrigin="anonymous"
