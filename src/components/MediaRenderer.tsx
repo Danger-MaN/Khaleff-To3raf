@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import Plyr from "plyr";
+import "plyr/dist/plyr.css";
 import type { VideoAspect } from "@/lib/articles";
 
 // ------------------- دوال مساعدة -------------------
@@ -33,8 +35,9 @@ function isGoogleDriveUrl(url: string): boolean {
 function getGoogleDriveEmbedUrl(url: string): string | null {
   let fileId: string | null = null;
   const matchFile = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
-  if (matchFile) fileId = matchFile[1];
-  else {
+  if (matchFile) {
+    fileId = matchFile[1];
+  } else {
     const matchOpen = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
     if (matchOpen) fileId = matchOpen[1];
   }
@@ -54,7 +57,7 @@ async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null>
   }
 }
 
-// ------------------- مكون عرض اللقطات (لم يتغير) -------------------
+// ------------------- مكون عرض اللقطات -------------------
 interface ThumbnailStripProps {
   videoElement: HTMLVideoElement | null;
   onSeek: (time: number) => void;
@@ -203,7 +206,7 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   );
 }
 
-// ------------------- المكون الرئيسي (بدون Plyr، مع <video controls>) -------------------
+// ------------------- المكون الرئيسي -------------------
 interface MediaRendererProps {
   url?: string;
   alt?: string;
@@ -216,7 +219,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
   const [error, setError] = useState(false);
   const [playerReady, setPlayerReady] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [videoDuration, setVideoDuration] = useState(0);
+  const playerRef = useRef<Plyr | null>(null);
 
   // تحديد مصدر المحتوى
   useEffect(() => {
@@ -234,16 +237,20 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
 
     if (isGoogleDriveUrl(url)) {
       const embedUrl = getGoogleDriveEmbedUrl(url);
-      if (embedUrl) setVideoSrc(embedUrl);
-      else setError(true);
-      setPlayerReady(true);
-      return;
+      if (embedUrl) {
+        setVideoSrc(embedUrl);
+        setPlayerReady(true);
+        return;
+      } else {
+        setError(true);
+        return;
+      }
     }
 
     if (isStreamTapeUrl(url)) {
       setLoading(true);
       getStreamTapeProxiedUrl(url)
-        .then(src => (src ? setVideoSrc(src) : setError(true)))
+        .then(src => src ? setVideoSrc(src) : setError(true))
         .catch(() => setError(true))
         .finally(() => setLoading(false));
       return;
@@ -267,17 +274,31 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
     setError(true);
   }, [url]);
 
-  // جاهزية الفيديو للقطات
+  // تهيئة Plyr للفيديو المباشر فقط
   useEffect(() => {
     if (!videoRef.current) return;
-    const handleLoadedMetadata = () => {
-      setVideoDuration(videoRef.current?.duration || 0);
+    if (!videoSrc) return;
+    if (videoSrc.includes('youtube.com/embed') || videoSrc.includes('drive.google.com/file/d/')) return;
+
+    if (playerRef.current) playerRef.current.destroy();
+
+    const initializePlayer = () => {
+      if (!videoRef.current) return;
+      playerRef.current = new Plyr(videoRef.current, {
+        controls: ["play-large", "play", "progress", "current-time", "duration", "mute", "captions", "settings", "pip", "airplay", "fullscreen"],
+        disableContextMenu: true,
+        seekTime: 10,
+        speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
+        download: false,
+        storage: { enabled: true, key: 'plyr' },
+      });
       setPlayerReady(true);
     };
-    videoRef.current.addEventListener('loadedmetadata', handleLoadedMetadata);
-    return () => {
-      if (videoRef.current) videoRef.current.removeEventListener('loadedmetadata', handleLoadedMetadata);
-    };
+
+    if (videoRef.current.readyState >= 1) initializePlayer();
+    else videoRef.current.addEventListener('loadedmetadata', initializePlayer, { once: true });
+
+    return () => { playerRef.current?.destroy(); playerRef.current = null; setPlayerReady(false); };
   }, [videoSrc]);
 
   const handleSeek = (time: number) => {
@@ -285,17 +306,9 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
   };
 
   if (loading) return <div className="p-8 text-center text-gold">جاري تجهيز الفيديو...</div>;
-  if (error || !videoSrc)
-    return (
-      <div className="p-8 text-center text-red-400">
-        لا يمكن عرض المحتوى.{" "}
-        <a href={url} target="_blank" rel="noopener noreferrer" className="underline">
-          فتح الرابط ↗
-        </a>
-      </div>
-    );
+  if (error || !videoSrc) return <div className="p-8 text-center text-red-400">لا يمكن عرض المحتوى. <a href={url} target="_blank" rel="noopener noreferrer" className="underline">فتح الرابط ↗</a></div>;
 
-  // ---------- YouTube ----------
+  // YouTube (iframe)
   if (videoSrc.includes('youtube.com/embed')) {
     return (
       <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
@@ -311,7 +324,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
     );
   }
 
-  // ---------- Google Drive (iframe) مع دعم الـ aspect ----------
+  // Google Drive (iframe) مع دعم videoAspect
   if (videoSrc.includes('drive.google.com/file/d/')) {
     let containerStyle: React.CSSProperties = { width: '100%', height: 'auto' };
     if (videoAspect === "portrait") {
@@ -333,49 +346,34 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
     );
   }
 
-  // ---------- الصور ----------
+  // الصور
   if (/\.(jpg|jpeg|png|gif|webp|avif)/i.test(videoSrc)) {
     return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/20" />;
   }
 
-  // ---------- الفيديو المباشر (مع عنصر <video> الأصلي وبدون Plyr) ----------
-  let videoContainerStyle: React.CSSProperties = {
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#000',
-    borderRadius: '0.5rem',
-    overflow: 'hidden',
-  };
-  let videoStyle: React.CSSProperties = {
-    maxWidth: '100%',
-    maxHeight: '80vh',
-    width: 'auto',
-    height: 'auto',
-    display: 'block',
-  };
-
-  if (videoAspect === "portrait") {
-    videoStyle = { ...videoStyle, height: '80vh', width: 'auto' };
-  } else if (videoAspect === "landscape") {
-    videoStyle = { ...videoStyle, width: '100%', height: 'auto' };
-  }
-
+  // ---------- الفيديو المباشر (Plyr) مع أسلوب بسيط لا يعكر صفو Plyr ----------
+  // نترك Plyr يأخذ المساحة الطبيعية، ونطبق فقط max-width و max-height على الحاوية
   return (
     <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
-      <div style={videoContainerStyle}>
+      <div className="flex justify-center items-center" style={{ maxHeight: '80vh' }}>
         <video
           ref={videoRef}
-          style={videoStyle}
-          controls
+          style={{
+            maxWidth: '100%',
+            maxHeight: '80vh',
+            width: 'auto',
+            height: 'auto',
+            display: 'block',
+          }}
           playsInline
+          crossOrigin="anonymous"
           preload="metadata"
         >
           <source src={videoSrc} type="video/mp4" />
           متصفحك لا يدعم تشغيل الفيديو.
         </video>
       </div>
-      {playerReady && videoDuration > 0 && (
+      {playerReady && (
         <div className="mt-2">
           <ThumbnailStrip
             videoElement={videoRef.current}
