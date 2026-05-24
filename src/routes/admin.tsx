@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Header } from "@/components/Header";
-import { articlesStore, slugify, type Article } from "@/lib/articles";
+import { articlesStore, slugify, type Article, type VideoAspect } from "@/lib/articles";
 import { categoriesStore, categoryLabel } from "@/lib/categories";
 import { SOCIAL_ICONS, socialsStore, type SocialIcon, type SocialLink } from "@/lib/socials";
 import * as Icons from "lucide-react";
@@ -99,6 +99,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
       content: "",
       category: "philosophy",
       mediaUrl: "",
+      videoAspect: "auto",
       createdAt: Date.now(),
       translations: {},
     });
@@ -222,10 +223,29 @@ function Editor({ article, onSave, onCancel }: { article: Article; onSave: (a: A
           <input className={inputCls} value={a.mediaUrl ?? ""} onChange={(e) => set("mediaUrl", e.target.value)} placeholder="https://..." />
           {a.mediaUrl && (
             <div className="mt-4">
-              <MediaRenderer url={a.mediaUrl} />
+              <MediaRenderer url={a.mediaUrl} videoAspect={a.videoAspect} />
             </div>
           )}
         </div>
+
+        {/* --- حقل تنسيق الفيديو الجديد --- */}
+        <div>
+          <label className={labelCls}>تنسيق عرض الفيديو</label>
+          <select
+            className={inputCls}
+            value={a.videoAspect ?? "auto"}
+            onChange={(e) => set("videoAspect", e.target.value as VideoAspect)}
+          >
+            <option value="auto">تلقائي (حسب حجم الفيديو الأصلي)</option>
+            <option value="landscape">أفقي (16:9) - للمحتوى التقليدي</option>
+            <option value="portrait">رأسي (9:16) - للـ Reels / Shorts</option>
+          </select>
+          <p className="text-[10px] text-muted-foreground mt-1">
+            اختيار التنسيق المناسب لتحسين تجربة المشاهدة، خاصة لفيديوهات الريلز الطويلة.
+          </p>
+        </div>
+        {/* --------------------------------- */}
+
         <div>
           <label className={labelCls}>{t("admin.fields.excerpt")}</label>
           <textarea className={inputCls} rows={3} value={a.excerpt} onChange={(e) => set("excerpt", e.target.value)} required />
