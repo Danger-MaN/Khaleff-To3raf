@@ -56,14 +56,14 @@ async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null>
   }
 }
 
-// ------------------- مكون عرض اللقطات (بدون تغيير) -------------------
+// ------------------- مكون عرض اللقطات -------------------
 interface ThumbnailStripProps {
   videoElement: HTMLVideoElement | null;
   onSeek: (time: number) => void;
   isVisible?: boolean;
 }
 
-const SEEK_INTERVAL_MS = 3000; // 3 ثوانٍ
+const SEEK_INTERVAL_MS = 3000;
 const THUMBNAIL_COUNT = 10;
 
 function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStripProps) {
@@ -205,7 +205,7 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   );
 }
 
-// ------------------- المكون الرئيسي (النسخة النهائية المتكاملة) -------------------
+// ------------------- المكون الرئيسي (بدون أي قيود على الأبعاد) -------------------
 export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string }) {
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -214,7 +214,6 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<Plyr | null>(null);
 
-  // تحديد مصدر المحتوى
   useEffect(() => {
     setVideoSrc(null);
     setError(false);
@@ -267,7 +266,6 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     setError(true);
   }, [url]);
 
-  // تهيئة Plyr فقط للفيديو المباشر (ليس iframe)
   useEffect(() => {
     if (!videoRef.current) return;
     if (!videoSrc) return;
@@ -301,11 +299,11 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
   if (loading) return <div className="p-8 text-center text-gold">جاري تجهيز الفيديو...</div>;
   if (error || !videoSrc) return <div className="p-8 text-center text-red-400">لا يمكن عرض المحتوى. <a href={url} target="_blank" rel="noopener noreferrer" className="underline">فتح الرابط ↗</a></div>;
 
-  // iframe (YouTube, Google Drive)
+  // YouTube / Google Drive (نسبة 16:9 كخيار افتراضي لأنها منصات تدعمها)
   if (videoSrc.includes('youtube.com/embed') || videoSrc.includes('drive.google.com/file/d/')) {
     return (
       <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
-        <div className="relative w-full" style={{ aspectRatio: '16/9', maxHeight: '80vh' }}>
+        <div className="relative w-full" style={{ aspectRatio: '16/9' }}>
           <iframe
             src={videoSrc}
             className="absolute inset-0 w-full h-full"
@@ -322,36 +320,27 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/20" />;
   }
 
-  // الفيديو المباشر - يدعم أي نسبة أبعاد (بما في ذلك الريلز الطولية)
+  // الفيديو المباشر: بدون أي قيود على الأبعاد، يعرض بالأبعاد الأصلية، ومركز أفقياً
   return (
     <div className="w-full bg-black overflow-hidden rounded-lg">
-      <div className="flex justify-center items-center min-h-[200px] p-2">
-        <div
-          className="rounded-lg overflow-hidden border border-gold/20"
+      <div className="flex justify-center">
+        <video
+          ref={videoRef}
           style={{
-            width: 'fit-content',
+            display: 'block',
+            width: 'auto',
+            height: 'auto',
             maxWidth: '100%',
             maxHeight: '90vh',
+            objectFit: 'contain',
           }}
+          playsInline
+          crossOrigin="anonymous"
+          preload="metadata"
         >
-          <video
-            ref={videoRef}
-            style={{
-              display: 'block',
-              width: 'auto',
-              height: 'auto',
-              maxWidth: '100%',
-              maxHeight: '90vh',
-              objectFit: 'contain',
-            }}
-            playsInline
-            crossOrigin="anonymous"
-            preload="metadata"
-          >
-            <source src={videoSrc} type="video/mp4" />
-            متصفحك لا يدعم تشغيل الفيديو.
-          </video>
-        </div>
+          <source src={videoSrc} type="video/mp4" />
+          متصفحك لا يدعم تشغيل الفيديو.
+        </video>
       </div>
       {playerReady && (
         <div className="mt-2">
