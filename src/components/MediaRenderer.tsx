@@ -32,8 +32,8 @@ function isGoogleDriveUrl(url: string): boolean {
   return /drive\.google\.com\/(file\/d\/|open\?id=)/i.test(url);
 }
 
-// استخراج معرف الفيديو من رابط Google Drive وتحويله إلى رابط تشغيل مباشر
-function getGoogleDriveDirectUrl(url: string): string | null {
+// استخراج معرف الفيديو من رابط Google Drive واستخدام دالة Netlify
+function getGoogleDriveProxiedUrl(url: string): string | null {
   let fileId: string | null = null;
   const matchFile = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
   if (matchFile) {
@@ -44,8 +44,8 @@ function getGoogleDriveDirectUrl(url: string): string | null {
   }
   if (!fileId) return null;
   
-  // استخدام خدمة gdurl لتحويل الرابط إلى رابط تشغيل مباشر
-  return `https://gdurl.com/${fileId}`;
+  // استخدام دالة Netlify الخاصة بنا
+  return `/.netlify/functions/google-drive?id=${fileId}`;
 }
 
 async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null> {
@@ -238,11 +238,10 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
       return;
     }
 
-    // معالجة Google Drive - استخراج المعرف وتحويله إلى رابط تشغيل مباشر
     if (isGoogleDriveUrl(url)) {
-      const directUrl = getGoogleDriveDirectUrl(url);
-      if (directUrl) {
-        setVideoSrc(directUrl);
+      const proxiedUrl = getGoogleDriveProxiedUrl(url);
+      if (proxiedUrl) {
+        setVideoSrc(proxiedUrl);
         return;
       } else {
         setError(true);
@@ -342,10 +341,6 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
   } else if (videoAspect === "portrait") {
     containerStyle = { aspectRatio: '9/16', maxHeight: '80vh', width: 'auto', margin: '0 auto' };
     videoStyle = { width: '100%', height: '100%', objectFit: 'contain' };
-  } else {
-    // auto: الحاوية تأخذ حجم الفيديو الأصلي
-    containerStyle = { display: 'flex', justifyContent: 'center' };
-    videoStyle = { display: 'block', width: 'auto', height: 'auto', maxWidth: '100%', maxHeight: '80vh', objectFit: 'contain' };
   }
 
   // الفيديو المباشر (بما في ذلك Drive و StreamTape والروابط المحلية)
