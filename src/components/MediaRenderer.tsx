@@ -209,22 +209,20 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   );
 }
 
-// ------------------- المكون الرئيسي المرن -------------------
+// ------------------- المكون الرئيسي -------------------
 export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string }) {
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [playerReady, setPlayerReady] = useState(false);
-  const [videoAspectRatio, setVideoAspectRatio] = useState<number | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<Plyr | null>(null);
 
-  // استخراج مصدر الفيديو
+  // تحديد مصدر المحتوى
   useEffect(() => {
     setVideoSrc(null);
     setError(false);
     setPlayerReady(false);
-    setVideoAspectRatio(null);
     if (!url) return;
 
     const ytId = getYouTubeId(url);
@@ -273,24 +271,7 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     setError(true);
   }, [url]);
 
-  // قراءة أبعاد الفيديو لحساب نسبة العرض إلى الارتفاع
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !videoSrc) return;
-    if (videoSrc.includes('youtube.com/embed') || videoSrc.includes('drive.google.com/file/d/')) return;
-
-    const updateAspectRatio = () => {
-      if (video.videoWidth && video.videoHeight) {
-        setVideoAspectRatio(video.videoWidth / video.videoHeight);
-      }
-    };
-
-    video.addEventListener('loadedmetadata', updateAspectRatio);
-    if (video.readyState >= 1) updateAspectRatio();
-    return () => video.removeEventListener('loadedmetadata', updateAspectRatio);
-  }, [videoSrc]);
-
-  // تهيئة Plyr
+  // تهيئة Plyr للفيديو المباشر (غير iframe)
   useEffect(() => {
     if (!videoRef.current) return;
     if (!videoSrc) return;
@@ -323,7 +304,7 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
   if (loading) return <div className="p-8 text-center text-gold">جاري تجهيز الفيديو...</div>;
   if (error || !videoSrc) return <div className="p-8 text-center text-red-400">لا يمكن عرض المحتوى. <a href={url} target="_blank" rel="noopener noreferrer" className="underline">فتح الرابط ↗</a></div>;
 
-  // حالة iframe (YouTube أو Google Drive)
+  // حالة iframe (YouTube أو Google Drive) - نعطيه أقصى ارتفاع مناسب
   if (videoSrc.includes('youtube.com/embed') || videoSrc.includes('drive.google.com/file/d/')) {
     return (
       <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
@@ -344,22 +325,18 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/20" />;
   }
 
-  // حالة الفيديو المباشر (mp4, webm...) مع مرونة تامة
-  const containerStyle: React.CSSProperties = {
-    width: '100%',
-    maxHeight: '80vh',
-    ...(videoAspectRatio && { aspectRatio: videoAspectRatio }),
-  };
-
+  // حالة الفيديو المباشر (mp4, webm, mov, etc.) - مرن للريلز والفيديوهات الطويلة
   return (
     <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
-      <div style={containerStyle} className="mx-auto">
+      {/* حاوية الفيديو بدون فرض نسبة أبعاد، تسمح للفيديو بالتمدد حسب حجمه الأصلي */}
+      <div className="flex justify-center">
         <video
           ref={videoRef}
-          className="w-full h-full object-contain"
+          className="w-full h-auto max-h-[80vh] object-contain"
           playsInline
           crossOrigin="anonymous"
           preload="metadata"
+          style={{ display: 'block' }}
         >
           <source src={videoSrc} type="video/mp4" />
           متصفحك لا يدعم تشغيل الفيديو.
