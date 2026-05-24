@@ -1,8 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
-import Plyr from "plyr";
-import "plyr/dist/plyr.css";
+import { useState, useEffect } from "react";
 import ReactPlayer from "react-player";
 import type { VideoAspect } from "@/lib/articles";
 
@@ -58,155 +56,6 @@ async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null>
   }
 }
 
-// ------------------- مكون عرض اللقطات -------------------
-interface ThumbnailStripProps {
-  videoElement: HTMLVideoElement | null;
-  onSeek: (time: number) => void;
-  isVisible?: boolean;
-}
-
-const SEEK_INTERVAL_MS = 3000;
-const THUMBNAIL_COUNT = 10;
-
-function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStripProps) {
-  const [thumbnails, setThumbnails] = useState<string[]>([]);
-  const [duration, setDuration] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [activeIndex, setActiveIndex] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(true);
-
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const isPlayingRef = useRef(isPlaying);
-  const activeIndexRef = useRef(activeIndex);
-  const thumbnailsLengthRef = useRef(0);
-  const durationRef = useRef(0);
-  const canvasRef = useRef<HTMLCanvasElement>(document.createElement('canvas'));
-
-  useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
-  useEffect(() => { activeIndexRef.current = activeIndex; }, [activeIndex]);
-  useEffect(() => { thumbnailsLengthRef.current = thumbnails.length; }, [thumbnails]);
-  useEffect(() => { durationRef.current = duration; }, [duration]);
-
-  const goToNextThumbnail = useCallback(() => {
-    const total = thumbnailsLengthRef.current;
-    if (total === 0) return;
-    setActiveIndex((activeIndexRef.current + 1) % total);
-  }, []);
-
-  useEffect(() => {
-    if (loading || thumbnails.length === 0) return;
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    intervalRef.current = setInterval(() => {
-      if (isPlayingRef.current) goToNextThumbnail();
-    }, SEEK_INTERVAL_MS);
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  }, [loading, thumbnails.length, goToNextThumbnail]);
-
-  useEffect(() => {
-    const video = videoElement;
-    if (!video) return;
-    const handlePlay = () => { if (isPlayingRef.current) setIsPlaying(false); };
-    const handlePause = () => { if (isPlayingRef.current) setIsPlaying(false); };
-    video.addEventListener('play', handlePlay);
-    video.addEventListener('pause', handlePause);
-    return () => {
-      video.removeEventListener('play', handlePlay);
-      video.removeEventListener('pause', handlePause);
-    };
-  }, [videoElement]);
-
-  useEffect(() => {
-    if (durationRef.current > 0 && thumbnails.length > 0) {
-      const step = durationRef.current / THUMBNAIL_COUNT;
-      onSeek(step * activeIndex);
-    }
-  }, [activeIndex, thumbnails.length, onSeek]);
-
-  const generateThumbnails = useCallback(async () => {
-    if (!videoElement) return;
-    setLoading(true);
-    const vid = videoElement;
-    const dur = vid.duration;
-    if (!dur || isNaN(dur)) return;
-    setDuration(dur);
-    const thumbs: string[] = [];
-    const step = dur / THUMBNAIL_COUNT;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    canvas.width = 120;
-    canvas.height = 68;
-
-    for (let i = 0; i < THUMBNAIL_COUNT; i++) {
-      vid.currentTime = step * i;
-      await new Promise<void>((resolve) => {
-        const seekedHandler = () => {
-          vid.removeEventListener('seeked', seekedHandler);
-          try {
-            ctx?.drawImage(vid, 0, 0, canvas.width, canvas.height);
-            thumbs.push(canvas.toDataURL('image/jpeg', 0.6));
-          } catch { thumbs.push(''); }
-          resolve();
-        };
-        vid.addEventListener('seeked', seekedHandler);
-      });
-    }
-    setThumbnails(thumbs);
-    setLoading(false);
-  }, [videoElement]);
-
-  const restartTimer = useCallback(() => { setActiveIndex(0); setIsPlaying(true); }, []);
-  const handleThumbnailClick = useCallback((index: number, time: number) => { setIsPlaying(false); setActiveIndex(index); onSeek(time); }, [onSeek]);
-
-  useEffect(() => {
-    if (!videoElement) return;
-    setIsPlaying(true);
-    setActiveIndex(0);
-    if (videoElement.readyState >= 2) generateThumbnails();
-    else videoElement.addEventListener('loadedmetadata', generateThumbnails, { once: true });
-  }, [videoElement, generateThumbnails]);
-
-  if (!isVisible) return null;
-  if (loading) return <div className="flex justify-center items-center gap-2 mt-3 p-2 bg-black/50 rounded-lg"><div className="animate-spin rounded-full h-5 w-5 border-2 border-gold border-t-transparent"></div><span className="text-xs text-gold/70">جاري تحضير المشاهد...</span></div>;
-  if (thumbnails.length === 0) return null;
-
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  return (
-    <div className="mt-3 w-full">
-      <div className="flex justify-between items-center mb-2 px-1">
-        <div className="flex items-center gap-3">
-          <span className="text-[11px] text-white/60">
-            {isPlaying ? `🔄 تسليط ضوء تلقائي (كل ${SEEK_INTERVAL_MS/1000} ثانية)` : '⏸️ توقف مؤقت'}
-          </span>
-          <span className="text-[11px] text-gold/80">{activeIndex + 1} / {THUMBNAIL_COUNT}</span>
-        </div>
-        {!isPlaying && <button onClick={restartTimer} className="text-[11px] text-gold/80 hover:text-gold">▶ إعادة التشغيل</button>}
-      </div>
-      <div className="flex gap-2 overflow-x-auto scrollbar-thin scrollbar-track-gray-800 scrollbar-thumb-gold/50 pb-2">
-        {thumbnails.map((thumb, idx) => {
-          const time = (duration / THUMBNAIL_COUNT) * idx;
-          const percentage = Math.round((time / duration) * 100);
-          const isActive = activeIndex === idx;
-          return (
-            <button key={idx} onClick={() => handleThumbnailClick(idx, time)} className={`flex flex-col items-center gap-1 transition-all hover:scale-105 focus:outline-none group flex-shrink-0 ${isActive ? 'scale-105' : ''}`}>
-              <div className="relative">
-                <img src={thumb} alt={`مشهد ${idx+1}`} className={`w-28 h-16 object-cover rounded-lg border transition-all ${isActive ? 'border-gold ring-2 ring-gold/50 shadow-lg' : 'border-gold/30 group-hover:border-gold'}`} loading="lazy" />
-                <div className="absolute bottom-1 right-1 bg-black/70 text-[10px] px-1 rounded text-gold">{percentage}%</div>
-                {isActive && <div className="absolute -top-2 left-1/2 transform -translate-x-1/2 bg-gold text-black text-[10px] px-1.5 py-0.5 rounded-full whitespace-nowrap">الحالي</div>}
-              </div>
-              <span className={`text-[10px] ${isActive ? 'text-gold font-medium' : 'text-white/70 group-hover:text-gold'}`}>{formatTime(time)}</span>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 // ------------------- المكون الرئيسي -------------------
 interface MediaRendererProps {
   url?: string;
@@ -218,29 +67,31 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
-  const [playerReady, setPlayerReady] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const playerRef = useRef<Plyr | null>(null);
+  const [isClient, setIsClient] = useState(false);
+
+  // تجنب مشكلة Hydration في Next.js
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   // تحديد مصدر المحتوى
   useEffect(() => {
     setVideoSrc(null);
     setError(false);
-    setPlayerReady(false);
     if (!url) return;
 
+    // YouTube
     const ytId = getYouTubeId(url);
     if (ytId) {
       setVideoSrc(url);
-      setPlayerReady(true);
       return;
     }
 
+    // Google Drive
     if (isGoogleDriveUrl(url)) {
       const embedUrl = getGoogleDriveEmbedUrl(url);
       if (embedUrl) {
         setVideoSrc(embedUrl);
-        setPlayerReady(true);
         return;
       } else {
         setError(true);
@@ -248,6 +99,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
       }
     }
 
+    // StreamTape
     if (isStreamTapeUrl(url)) {
       setLoading(true);
       getStreamTapeProxiedUrl(url)
@@ -257,16 +109,19 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
       return;
     }
 
+    // Terabox (غير مدعوم حالياً)
     if (isTeraboxUrl(url)) {
       setError(true);
       return;
     }
 
+    // روابط مباشرة (mp4, webm, mov, ogg)
     if (/\.(mp4|webm|mov|ogg)/i.test(url)) {
       setVideoSrc(url);
       return;
     }
 
+    // الصور
     if (/\.(jpg|jpeg|png|gif|webp|avif)/i.test(url)) {
       setVideoSrc(url);
       return;
@@ -275,63 +130,36 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
     setError(true);
   }, [url]);
 
-  // تهيئة Plyr فقط للفيديو المباشر غير الطولي
-  useEffect(() => {
-    if (!videoRef.current) return;
-    if (!videoSrc) return;
-    if (videoSrc.includes('youtube.com') || videoSrc.includes('drive.google.com')) return;
-    if (videoAspect === "portrait") return;
-
-    if (playerRef.current) playerRef.current.destroy();
-
-    const initializePlayer = () => {
-      if (!videoRef.current) return;
-      playerRef.current = new Plyr(videoRef.current, {
-        controls: ["play-large", "play", "progress", "current-time", "duration", "mute", "captions", "settings", "pip", "airplay", "fullscreen"],
-        disableContextMenu: true,
-        seekTime: 10,
-        speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
-        download: false,
-        storage: { enabled: true, key: 'plyr' },
-      });
-      setPlayerReady(true);
-    };
-
-    if (videoRef.current.readyState >= 1) initializePlayer();
-    else videoRef.current.addEventListener('loadedmetadata', initializePlayer, { once: true });
-
-    return () => { playerRef.current?.destroy(); playerRef.current = null; setPlayerReady(false); };
-  }, [videoSrc, videoAspect]);
-
-  const handleSeek = (time: number) => {
-    if (videoRef.current) videoRef.current.currentTime = time;
-  };
-
   if (loading) return <div className="p-8 text-center text-gold">جاري تجهيز الفيديو...</div>;
   if (error || !videoSrc) return <div className="p-8 text-center text-red-400">لا يمكن عرض المحتوى. <a href={url} target="_blank" rel="noopener noreferrer" className="underline">فتح الرابط ↗</a></div>;
 
-  // ---------- YouTube (باستخدام ReactPlayer) ----------
-  if (videoSrc.includes('youtube.com/watch') || videoSrc.includes('youtu.be')) {
-    let playerWidth = '100%';
-    let playerHeight = 'auto';
-    if (videoAspect === "portrait") {
-      playerWidth = 'auto';
-      playerHeight = '80vh';
-    }
-    return (
-      <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden flex justify-center">
-        <ReactPlayer
-          url={videoSrc}
-          width={playerWidth}
-          height={playerHeight}
-          controls={true}
-          config={{ youtube: { playerVars: { modestbranding: 1, rel: 0 } } }}
-        />
-      </div>
-    );
+  // الصور
+  if (/\.(jpg|jpeg|png|gif|webp|avif)/i.test(videoSrc)) {
+    return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/20" />;
   }
 
-  // ---------- Google Drive (iframe) مع دعم videoAspect ----------
+  // تحديد أبعاد الفيديو بناءً على videoAspect
+  let playerWidth: string | number = "100%";
+  let playerHeight: string | number = "auto";
+
+  if (videoAspect === "portrait") {
+    playerWidth = "auto";
+    playerHeight = "80vh";
+  } else if (videoAspect === "landscape") {
+    playerWidth = "100%";
+    playerHeight = "auto";
+  } else {
+    // auto
+    playerWidth = "100%";
+    playerHeight = "auto";
+  }
+
+  // منع الـ Hydration mismatch
+  if (!isClient) {
+    return <div className="w-full rounded-lg border border-gold/20 bg-black" style={{ minHeight: '200px' }} />;
+  }
+
+  // Google Drive (iframe)
   if (videoSrc.includes('drive.google.com/file/d/')) {
     let containerStyle: React.CSSProperties = { width: '100%', height: 'auto' };
     if (videoAspect === "portrait") {
@@ -353,79 +181,26 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
     );
   }
 
-  // ---------- الصور ----------
-  if (/\.(jpg|jpeg|png|gif|webp|avif)/i.test(videoSrc)) {
-    return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/20" />;
-  }
-
-  // ---------- الفيديو المباشر ----------
-  const isPortrait = videoAspect === "portrait";
-  const isLandscape = videoAspect === "landscape";
-
-  if (isPortrait) {
-    // فيديو طويل (Reels) - نستخدم ReactPlayer للحصول على واجهة نظيفة
-    return (
-      <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden flex justify-center">
-        <ReactPlayer
-          url={videoSrc}
-          width="auto"
-          height="80vh"
-          controls={true}
-          playing={false}
-        />
-      </div>
-    );
-  }
-
-  if (isLandscape) {
-    // فيديو عرضي - نستخدم Plyr
-    return (
-      <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
-        <video
-          ref={videoRef}
-          style={{ width: '100%', height: 'auto', display: 'block' }}
-          playsInline
-          crossOrigin="anonymous"
-          preload="metadata"
-        >
-          <source src={videoSrc} type="video/mp4" />
-        </video>
-        {playerReady && (
-          <div className="mt-2">
-            <ThumbnailStrip
-              videoElement={videoRef.current}
-              onSeek={handleSeek}
-              isVisible={true}
-            />
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // auto - نستخدم Plyr مع أبعاد مرنة
+  // ReactPlayer لجميع الفيديوهات الأخرى
   return (
-    <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
-      <div className="flex justify-center">
-        <video
-          ref={videoRef}
-          style={{ maxWidth: '100%', maxHeight: '80vh', width: 'auto', height: 'auto', display: 'block' }}
-          playsInline
-          crossOrigin="anonymous"
-          preload="metadata"
-        >
-          <source src={videoSrc} type="video/mp4" />
-        </video>
-      </div>
-      {playerReady && (
-        <div className="mt-2">
-          <ThumbnailStrip
-            videoElement={videoRef.current}
-            onSeek={handleSeek}
-            isVisible={true}
-          />
-        </div>
-      )}
+    <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden flex justify-center">
+      <ReactPlayer
+        url={videoSrc}
+        width={playerWidth}
+        height={playerHeight}
+        controls={true}
+        playing={false}
+        config={{
+          youtube: {
+            playerVars: { modestbranding: 1, rel: 0 },
+          },
+          file: {
+            attributes: {
+              controlsList: 'nodownload', // منع التحميل المباشر
+            },
+          },
+        }}
+      />
     </div>
   );
 }
