@@ -42,7 +42,6 @@ function getGoogleDriveEmbedUrl(url: string): string | null {
     if (matchOpen) fileId = matchOpen[1];
   }
   if (!fileId) return null;
-  // رابط التضمين الموثوق لـ Google Drive
   return `https://drive.google.com/file/d/${fileId}/preview`;
 }
 
@@ -236,9 +235,6 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
       return;
     }
 
-    // Google Drive: سنستخدم iframe، لذلك نضع رابط التضمين في videoSrc وسنعرضه لاحقاً بشكل منفصل
-    // لا نريد معاملته كفيديو مباشر، لذلك نتركه ليعالج في قسم العرض.
-    // لكننا سنحتاجه في حالة العرض الخاصة بـ Drive، لذا سنخزنه في videoSrc أيضاً.
     if (isGoogleDriveUrl(url)) {
       const embedUrl = getGoogleDriveEmbedUrl(url);
       if (embedUrl) {
@@ -278,11 +274,10 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
     setError(true);
   }, [url]);
 
-  // تهيئة Plyr للفيديو المباشر فقط (StreamTape, local MP4)
+  // تهيئة Plyr للفيديو المباشر فقط (StreamTape, MP4)
   useEffect(() => {
     if (!videoRef.current) return;
     if (!videoSrc) return;
-    // لا نطبق Plyr على YouTube أو Google Drive لأنها تستخدم iframe
     if (videoSrc.includes('youtube.com/embed') || videoSrc.includes('drive.google.com/file/d/')) return;
 
     if (playerRef.current) playerRef.current.destroy();
@@ -313,7 +308,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
   if (loading) return <div className="p-8 text-center text-gold">جاري تجهيز الفيديو...</div>;
   if (error || !videoSrc) return <div className="p-8 text-center text-red-400">لا يمكن عرض المحتوى. <a href={url} target="_blank" rel="noopener noreferrer" className="underline">فتح الرابط ↗</a></div>;
 
-  // ------------------- YouTube (iframe بنسبة 16:9 ثابتة) -------------------
+  // ==================== YouTube ====================
   if (videoSrc.includes('youtube.com/embed')) {
     return (
       <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
@@ -329,7 +324,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
     );
   }
 
-  // ------------------- Google Drive (iframe مع دعم videoAspect) -------------------
+  // ==================== Google Drive (iframe) ====================
   if (videoSrc.includes('drive.google.com/file/d/')) {
     let containerStyle: React.CSSProperties = { width: '100%', height: 'auto' };
     if (videoAspect === "portrait") {
@@ -351,30 +346,31 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
     );
   }
 
-  // ------------------- الصور -------------------
+  // ==================== الصور ====================
   if (/\.(jpg|jpeg|png|gif|webp|avif)/i.test(videoSrc)) {
     return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/20" />;
   }
 
-  // ------------------- الفيديو المباشر (StreamTape, local MP4) مع Plyr ودعم videoAspect -------------------
-  let containerStyle: React.CSSProperties = { display: 'flex', justifyContent: 'center' };
-  let videoStyle: React.CSSProperties = { display: 'block', objectFit: 'contain', maxWidth: '100%', maxHeight: '80vh' };
+  // ==================== الفيديو المباشر (مع Plyr وتطبيق videoAspect بأسلوب لا يعكر صفو Plyr) ====================
+  // نستخدم حاوية خارجية ذات أبعاد مرنة ولا نستخدم flex التي تؤثر على Plyr.
+  let videoContainerStyle: React.CSSProperties = { width: '100%', backgroundColor: '#000', borderRadius: '0.5rem' };
+  let videoStyle: React.CSSProperties = { width: '100%', height: 'auto', display: 'block' };
 
-  if (videoAspect === "landscape") {
-    containerStyle = { aspectRatio: '16/9', maxWidth: '100%' };
-    videoStyle = { width: '100%', height: '100%', objectFit: 'contain' };
-  } else if (videoAspect === "portrait") {
-    containerStyle = { aspectRatio: '9/16', maxHeight: '80vh', width: 'auto', margin: '0 auto' };
-    videoStyle = { width: '100%', height: '100%', objectFit: 'contain' };
+  if (videoAspect === "portrait") {
+    // نحدد أقصى ارتفاع ولا نستخدم aspect-ratio على الفيديو نفسه، بل نترك الحجم يحدد بواسطة العرض.
+    videoContainerStyle = { ...videoContainerStyle, display: 'flex', justifyContent: 'center' };
+    videoStyle = { height: '80vh', width: 'auto', maxWidth: '100%', display: 'block' };
+  } else if (videoAspect === "landscape") {
+    // نترك الفيديو ياخذ العرض الكامل
+    videoStyle = { width: '100%', height: 'auto', display: 'block' };
   } else {
     // auto
-    containerStyle = { display: 'flex', justifyContent: 'center' };
-    videoStyle = { display: 'block', width: 'auto', height: 'auto', maxWidth: '100%', maxHeight: '80vh', objectFit: 'contain' };
+    videoStyle = { width: '100%', height: 'auto', display: 'block' };
   }
 
   return (
     <div className="w-full bg-black rounded-lg border border-gold/20 overflow-hidden">
-      <div style={containerStyle} className="w-full">
+      <div style={videoContainerStyle}>
         <video
           ref={videoRef}
           style={videoStyle}
