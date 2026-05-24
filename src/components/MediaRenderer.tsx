@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import type { VideoAspect } from "@/lib/articles";
 
 // ------------------- دوال مساعدة -------------------
@@ -162,37 +162,12 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
     return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/20" />;
   }
 
-  // ---------- الفيديو المباشر: عنصر فيديو عادي مع CSS بسيط جداً ----------
+  // الفيديو المباشر
   const isPortrait = videoAspect === "portrait";
-  const isLandscape = videoAspect === "landscape";
-
-  let videoStyle: React.CSSProperties = {
-    display: 'block',
-    maxWidth: '100%',
-  };
-
-  if (isPortrait) {
-    videoStyle = {
-      ...videoStyle,
-      maxHeight: '80vh',
-      width: 'auto',
-      height: 'auto',
-      margin: '0 auto',
-    };
-  } else if (isLandscape) {
-    videoStyle = {
-      ...videoStyle,
-      width: '100%',
-      height: 'auto',
-    };
-  } else {
-    // auto
-    videoStyle = {
-      ...videoStyle,
-      width: '100%',
-      height: 'auto',
-    };
-  }
+  const videoClass = isPortrait ? "video-portrait" : "";
+  const videoStyle: React.CSSProperties = isPortrait 
+    ? { maxHeight: '80vh', width: 'auto', margin: '0 auto', display: 'block' }
+    : { width: '100%', height: 'auto', display: 'block' };
 
   return (
     <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
@@ -202,6 +177,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
           controls
           playsInline
           preload="metadata"
+          className={videoClass}
           style={videoStyle}
         >
           متصفحك لا يدعم تشغيل الفيديو.
