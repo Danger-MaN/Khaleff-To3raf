@@ -324,7 +324,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
     );
   }
 
-  // Google Drive (بدون زر الرابط)
+  // Google Drive - بدون أي زر خارجي
   if (videoSrc.includes('drive.google.com/file/d/')) {
     let containerStyle: React.CSSProperties = { width: '100%', height: 'auto' };
     if (videoAspect === "portrait") {
