@@ -57,6 +57,32 @@ async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null>
   }
 }
 
+// دالة للحصول على نمط الحاوية بناءً على videoAspect
+function getContainerStyle(videoAspect: VideoAspect): React.CSSProperties {
+  switch (videoAspect) {
+    case "landscape":
+      return { aspectRatio: "16/9", maxWidth: "100%" };
+    case "portrait":
+      return { aspectRatio: "9/16", maxHeight: "80vh", width: "auto", margin: "0 auto" };
+    case "auto":
+    default:
+      return { display: "flex", justifyContent: "center" };
+  }
+}
+
+// دالة للحصول على نمط الفيديو/iframe بناءً على videoAspect
+function getContentStyle(videoAspect: VideoAspect): React.CSSProperties {
+  switch (videoAspect) {
+    case "landscape":
+      return { width: "100%", height: "100%", objectFit: "contain" };
+    case "portrait":
+      return { width: "100%", height: "100%", objectFit: "contain" };
+    case "auto":
+    default:
+      return { display: "block", width: "auto", height: "auto", maxWidth: "100%", maxHeight: "80vh", objectFit: "contain", margin: "0 auto" };
+  }
+}
+
 // ------------------- مكون عرض اللقطات -------------------
 interface ThumbnailStripProps {
   videoElement: HTMLVideoElement | null;
@@ -218,18 +244,22 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [playerReady, setPlayerReady] = useState(false);
+  const [contentType, setContentType] = useState<"youtube" | "googledrive" | "video" | "image" | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<Plyr | null>(null);
 
+  // تحديد مصدر المحتوى ونوعه
   useEffect(() => {
     setVideoSrc(null);
     setError(false);
     setPlayerReady(false);
+    setContentType(null);
     if (!url) return;
 
     const ytId = getYouTubeId(url);
     if (ytId) {
       setVideoSrc(`https://www.youtube.com/embed/${ytId}`);
+      setContentType("youtube");
       setPlayerReady(true);
       return;
     }
@@ -238,6 +268,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
       const embedUrl = getGoogleDriveEmbedUrl(url);
       if (embedUrl) {
         setVideoSrc(embedUrl);
+        setContentType("googledrive");
         setPlayerReady(true);
         return;
       } else {
@@ -249,7 +280,12 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
     if (isStreamTapeUrl(url)) {
       setLoading(true);
       getStreamTapeProxiedUrl(url)
-        .then(src => src ? setVideoSrc(src) : setError(true))
+        .then(src => {
+          if (src) {
+            setVideoSrc(src);
+            setContentType("video");
+          } else setError(true);
+        })
         .catch(() => setError(true))
         .finally(() => setLoading(false));
       return;
@@ -262,21 +298,24 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
 
     if (/\.(mp4|webm|mov|ogg)/i.test(url)) {
       setVideoSrc(url);
+      setContentType("video");
       return;
     }
 
     if (/\.(jpg|jpeg|png|gif|webp|avif)/i.test(url)) {
       setVideoSrc(url);
+      setContentType("image");
       return;
     }
 
     setError(true);
   }, [url]);
 
+  // تهيئة Plyr للفيديو المباشر فقط
   useEffect(() => {
     if (!videoRef.current) return;
     if (!videoSrc) return;
-    if (videoSrc.includes('youtube.com/embed') || videoSrc.includes('drive.google.com/file/d/')) return;
+    if (contentType !== "video") return;
 
     if (playerRef.current) playerRef.current.destroy();
 
@@ -297,7 +336,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
     else videoRef.current.addEventListener('loadedmetadata', initializePlayer, { once: true });
 
     return () => { playerRef.current?.destroy(); playerRef.current = null; setPlayerReady(false); };
-  }, [videoSrc]);
+  }, [videoSrc, contentType]);
 
   const handleSeek = (time: number) => {
     if (videoRef.current) videoRef.current.currentTime = time;
@@ -306,14 +345,17 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
   if (loading) return <div className="p-8 text-center text-gold">جاري تجهيز الفيديو...</div>;
   if (error || !videoSrc) return <div className="p-8 text-center text-red-400">لا يمكن عرض المحتوى. <a href={url} target="_blank" rel="noopener noreferrer" className="underline">فتح الرابط ↗</a></div>;
 
-  // YouTube / Google Drive (نسبة 16:9 ثابتة)
-  if (videoSrc.includes('youtube.com/embed') || videoSrc.includes('drive.google.com/file/d/')) {
+  const containerStyle = getContainerStyle(videoAspect);
+  const contentStyle = getContentStyle(videoAspect);
+
+  // YouTube أو Google Drive (iframe)
+  if (contentType === "youtube" || contentType === "googledrive") {
     return (
-      <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
-        <div className="relative w-full" style={{ aspectRatio: '16/9' }}>
+      <div className="w-full bg-black rounded-lg border border-gold/20 overflow-hidden">
+        <div style={containerStyle} className="flex justify-center items-center">
           <iframe
             src={videoSrc}
-            className="absolute inset-0 w-full h-full"
+            style={contentStyle}
             allowFullScreen
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           />
@@ -323,60 +365,27 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
   }
 
   // الصور
-  if (/\.(jpg|jpeg|png|gif|webp|avif)/i.test(videoSrc)) {
-    return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/20" />;
+  if (contentType === "image") {
+    return <img src={videoSrc} alt={alt} style={contentStyle} className="w-full rounded-lg border border-gold/20" />;
   }
 
-  // الفيديو المباشر - تطبيق videoAspect بقوة
-  let containerClasses = "w-full bg-black rounded-lg border border-gold/20 overflow-hidden flex justify-center";
-  let videoClasses = "";
-  let videoStyle: React.CSSProperties = { display: 'block', objectFit: 'contain' };
-
-  if (videoAspect === "portrait") {
-    // فيديو رأسي (Reels/Shorts) - ارتفاع كامل وعرض محدود
-    containerClasses += " items-center";
-    videoStyle = {
-      display: 'block',
-      width: 'auto',
-      height: 'auto',
-      maxWidth: '100%',
-      maxHeight: '85vh',
-      objectFit: 'contain',
-      margin: '0 auto',
-    };
-  } else if (videoAspect === "landscape") {
-    // فيديو أفقي - عرض كامل
-    videoStyle = {
-      display: 'block',
-      width: '100%',
-      height: 'auto',
-      objectFit: 'contain',
-    };
-  } else {
-    // تلقائي - يحترم الأبعاد الأصلية
-    videoStyle = {
-      display: 'block',
-      width: '100%',
-      height: 'auto',
-      objectFit: 'contain',
-    };
-  }
-
+  // الفيديو المباشر (MP4, Streamtape, etc.)
   return (
-    <div className={containerClasses}>
-      <video
-        ref={videoRef}
-        className={videoClasses}
-        style={videoStyle}
-        playsInline
-        crossOrigin="anonymous"
-        preload="metadata"
-      >
-        <source src={videoSrc} type="video/mp4" />
-        متصفحك لا يدعم تشغيل الفيديو.
-      </video>
+    <div className="w-full bg-black rounded-lg border border-gold/20 overflow-hidden">
+      <div style={containerStyle} className="flex justify-center items-center">
+        <video
+          ref={videoRef}
+          style={contentStyle}
+          playsInline
+          crossOrigin="anonymous"
+          preload="metadata"
+        >
+          <source src={videoSrc} type="video/mp4" />
+          متصفحك لا يدعم تشغيل الفيديو.
+        </video>
+      </div>
       {playerReady && (
-        <div className="mt-2 w-full px-2">
+        <div className="mt-2">
           <ThumbnailStrip
             videoElement={videoRef.current}
             onSeek={handleSeek}
