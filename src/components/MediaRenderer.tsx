@@ -27,6 +27,27 @@ function isTeraboxUrl(url: string): boolean {
   return /(terabox|1024terabox|teraboxapp|dubox|4funbox)\./i.test(url);
 }
 
+function isGoogleDriveUrl(url: string): boolean {
+  return /drive\.google\.com\/(file\/d\/|open\?id=)/i.test(url);
+}
+
+function getGoogleDriveEmbedUrl(url: string): string | null {
+  let fileId: string | null = null;
+  // pattern: /file/d/FILE_ID/view
+  const matchFile = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (matchFile) {
+    fileId = matchFile[1];
+  } else {
+    // pattern: open?id=FILE_ID
+    const matchOpen = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if (matchOpen) {
+      fileId = matchOpen[1];
+    }
+  }
+  if (!fileId) return null;
+  return `https://drive.google.com/file/d/${fileId}/preview`;
+}
+
 async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null> {
   try {
     const infoRes = await fetch(`/.netlify/functions/streamtape?url=${encodeURIComponent(shareUrl)}`);
@@ -39,7 +60,7 @@ async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null>
   }
 }
 
-// ------------------- مكون عرض اللقطات -------------------
+// ------------------- مكون عرض اللقطات (لم يتغير) -------------------
 interface ThumbnailStripProps {
   videoElement: HTMLVideoElement | null;
   onSeek: (time: number) => void;
@@ -56,7 +77,6 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   const [activeIndex, setActiveIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
   
-  // Refs لضمان ثبات المؤقت
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const isPlayingRef = useRef(isPlaying);
   const activeIndexRef = useRef(activeIndex);
@@ -65,7 +85,6 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   
   const canvasRef = useRef<HTMLCanvasElement>(document.createElement('canvas'));
 
-  // مزامنة refs مع القيم الحالية
   useEffect(() => {
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
@@ -82,7 +101,6 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
     durationRef.current = duration;
   }, [duration]);
 
-  // دالة التقدم إلى المشهد التالي (تعتمد على refs فقط)
   const goToNextThumbnail = useCallback(() => {
     const total = thumbnailsLengthRef.current;
     if (total === 0) return;
@@ -92,14 +110,11 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
     setActiveIndex(newIndex);
   }, []);
 
-  // بدء المؤقت الثابت (مرة واحدة فقط بعد تحميل اللقطات)
   useEffect(() => {
     if (loading || thumbnails.length === 0) return;
     
-    // إيقاف أي مؤقت سابق
     if (intervalRef.current) clearInterval(intervalRef.current);
     
-    // إنشاء مؤقت جديد بفاصل ثابت
     intervalRef.current = setInterval(() => {
       if (isPlayingRef.current) {
         goToNextThumbnail();
@@ -111,20 +126,17 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
     };
   }, [loading, thumbnails.length, goToNextThumbnail]);
 
-  // استماع لحدثي play و pause على الفيديو لإيقاف التلقائي بشكل مطلق
   useEffect(() => {
     const video = videoElement;
     if (!video) return;
     
     const handlePlay = () => {
-      // إيقاف التلقائي عند الضغط على play
       if (isPlayingRef.current) {
         setIsPlaying(false);
       }
     };
     
     const handlePause = () => {
-      // إيقاف التلقائي عند الضغط على pause أيضاً
       if (isPlayingRef.current) {
         setIsPlaying(false);
       }
@@ -139,7 +151,6 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
     };
   }, [videoElement]);
 
-  // عند تغيير activeIndex، نطلب التمرير في الفيديو
   useEffect(() => {
     if (durationRef.current > 0 && thumbnails.length > 0) {
       const step = durationRef.current / THUMBNAIL_COUNT;
@@ -148,7 +159,6 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
     }
   }, [activeIndex, thumbnails.length, onSeek]);
 
-  // توليد اللقطات
   const generateThumbnails = useCallback(async () => {
     if (!videoElement) return;
     setLoading(true);
@@ -184,20 +194,17 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
     setLoading(false);
   }, [videoElement]);
 
-  // إعادة التشغيل: تعيين المشهد الأول وتفعيل التلقائي
   const restartTimer = useCallback(() => {
     setActiveIndex(0);
     setIsPlaying(true);
   }, []);
 
-  // النقر اليدوي على مشهد: يوقف التلقائي ويذهب إلى التوقيت
   const handleThumbnailClick = useCallback((index: number, time: number) => {
     setIsPlaying(false);
     setActiveIndex(index);
     onSeek(time);
   }, [onSeek]);
 
-  // بدء التوليد عند تحميل الفيديو
   useEffect(() => {
     if (!videoElement) return;
     setIsPlaying(true);
@@ -273,6 +280,7 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     setPlayerReady(false);
     if (!url) return;
 
+    // 1) YouTube
     const ytId = getYouTubeId(url);
     if (ytId) {
       setVideoSrc(`https://www.youtube.com/embed/${ytId}`);
@@ -280,6 +288,20 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
       return;
     }
 
+    // 2) Google Drive (new)
+    if (isGoogleDriveUrl(url)) {
+      const embedUrl = getGoogleDriveEmbedUrl(url);
+      if (embedUrl) {
+        setVideoSrc(embedUrl);
+        setPlayerReady(true); // سيعرض iframe بدلاً من player
+        return;
+      } else {
+        setError(true);
+        return;
+      }
+    }
+
+    // 3) Streamtape
     if (isStreamTapeUrl(url)) {
       setLoading(true);
       getStreamTapeProxiedUrl(url)
@@ -292,16 +314,19 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
       return;
     }
 
+    // 4) Terabox (غير مدعوم)
     if (isTeraboxUrl(url)) {
       setError(true);
       return;
     }
 
+    // 5) ملفات فيديو مباشرة
     if (/\.(mp4|webm|mov|ogg)/i.test(url)) {
       setVideoSrc(url);
       return;
     }
 
+    // 6) صور
     if (/\.(jpg|jpeg|png|gif|webp|avif)/i.test(url)) {
       setVideoSrc(url);
       return;
@@ -310,8 +335,13 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     setError(true);
   }, [url]);
 
+  // تهيئة Plyr فقط للمقاطع التي تأتي كـ source فيديو (وليست iframe)
   useEffect(() => {
-    if (!videoRef.current || !videoSrc || videoSrc.includes('youtube')) return;
+    if (!videoRef.current) return;
+    if (!videoSrc) return;
+    // إذا كان المصدر iframe (YouTube أو Drive) لا نفعّل Plyr
+    if (videoSrc.includes('youtube.com/embed') || videoSrc.includes('drive.google.com/file/d/')) return;
+
     if (playerRef.current) playerRef.current.destroy();
 
     const initializePlayer = () => {
@@ -348,10 +378,28 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
   };
 
   if (loading) return <div className="p-8 text-center text-gold">جاري تجهيز الفيديو...</div>;
-  if (error || !videoSrc) return <div className="p-8 text-center text-red-400">لا يمكن عرض الفيديو. <a href={url} target="_blank" rel="noopener noreferrer" className="underline">فتح الرابط ↗</a></div>;
-  if (videoSrc.includes("youtube.com/embed")) return <div style={{ aspectRatio: "16/9" }} className="relative w-full rounded-lg border border-gold/20 overflow-hidden"><iframe src={videoSrc} className="absolute inset-0 w-full h-full" allowFullScreen allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" /></div>;
-  if (/\.(jpg|jpeg|png|gif|webp|avif)/i.test(videoSrc)) return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/20" />;
+  if (error || !videoSrc) return <div className="p-8 text-center text-red-400">لا يمكن عرض المحتوى. <a href={url} target="_blank" rel="noopener noreferrer" className="underline">فتح الرابط ↗</a></div>;
 
+  // عرض iframe لـ YouTube أو Google Drive
+  if (videoSrc.includes('youtube.com/embed') || videoSrc.includes('drive.google.com/file/d/')) {
+    return (
+      <div style={{ aspectRatio: "16/9" }} className="relative w-full rounded-lg border border-gold/20 overflow-hidden">
+        <iframe
+          src={videoSrc}
+          className="absolute inset-0 w-full h-full"
+          allowFullScreen
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+        />
+      </div>
+    );
+  }
+
+  // عرض الصور
+  if (/\.(jpg|jpeg|png|gif|webp|avif)/i.test(videoSrc)) {
+    return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/20" />;
+  }
+
+  // عرض الفيديو العادي مع Plyr وشريط المشاهد
   return (
     <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
       <div className="p-0">
