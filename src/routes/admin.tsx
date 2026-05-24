@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Header } from "@/components/Header";
 import { articlesStore, slugify, type Article, type VideoAspect } from "@/lib/articles";
@@ -7,16 +7,112 @@ import { categoriesStore, categoryLabel } from "@/lib/categories";
 import { SOCIAL_ICONS, socialsStore, type SocialIcon, type SocialLink } from "@/lib/socials";
 import * as Icons from "lucide-react";
 import { SUPPORTED_LANGS } from "@/lib/i18n";
-import { MediaRenderer } from "@/components/MediaRenderer";
 import { TranslatedText } from "@/components/TranslatedText";
 import { Plus, Pencil, Trash2, LogOut, Lock, X } from "lucide-react";
+import Plyr from "plyr-react";
+import "plyr-react/plyr.css";
 
 export const Route = createFileRoute("/admin")({ component: AdminPage });
 
 const ADMIN_PASSWORD = "khaleff2025";
-
 const AUTH_KEY = "kt_admin_auth";
 
+// -------------------- Helper: تحويل رابط Google Drive إلى رابط مباشر --------------------
+function getDriveDirectLink(url: string): string | null {
+  try {
+    const urlObj = new URL(url);
+    // ربط المشاركة العادي: https://drive.google.com/file/d/FILE_ID/view?usp=sharing
+    let match = /\/file\/d\/([a-zA-Z0-9_-]+)/.exec(urlObj.pathname);
+    if (match) return `https://drive.google.com/uc?export=download&id=${match[1]}`;
+    // رابط ID صريح: https://drive.google.com/open?id=FILE_ID
+    match = /[?&]id=([^&]+)/.exec(url);
+    if (match) return `https://drive.google.com/uc?export=download&id=${match[1]}`;
+    // رابط مباشر قديم: https://drive.google.com/uc?export=download&id=FILE_ID
+    if (urlObj.searchParams.has("id")) {
+      return url;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// -------------------- مكون MediaRenderer المحسّن لدعم Google Drive --------------------
+function MediaRenderer({ url, videoAspect = "auto" }: { url: string; videoAspect?: VideoAspect }) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [isDrive, setIsDrive] = useState(false);
+  const plyrRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (!url) {
+      setSrc(null);
+      return;
+    }
+
+    // تحويل رابط Drive إذا لزم الأمر
+    if (url.includes("drive.google.com")) {
+      const direct = getDriveDirectLink(url);
+      if (direct) {
+        setSrc(direct);
+        setIsDrive(true);
+      } else {
+        setSrc(null);
+      }
+    } else {
+      setSrc(url);
+      setIsDrive(false);
+    }
+  }, [url]);
+
+  if (!src) {
+    return <p className="text-xs text-muted-foreground">رابط غير صالح أو غير مدعوم</p>;
+  }
+
+  // تحديد نسبة العرض إلى الارتفاع
+  let ratioClass = "";
+  if (videoAspect === "portrait") ratioClass = "aspect-[9/16]";
+  else if (videoAspect === "landscape") ratioClass = "aspect-video";
+  else ratioClass = "";
+
+  // خيارات Plyr (دعم التحكم الكامل)
+  const plyrOptions = {
+    controls: [
+      "play-large",
+      "play",
+      "progress",
+      "current-time",
+      "mute",
+      "volume",
+      "captions",
+      "settings",
+      "pip",
+      "airplay",
+      "fullscreen",
+    ],
+    autoplay: false,
+    ratio: videoAspect === "portrait" ? "9:16" : videoAspect === "landscape" ? "16:9" : undefined,
+  };
+
+  return (
+    <div className={ratioClass}>
+      <Plyr
+        ref={plyrRef}
+        source={{
+          type: "video",
+          sources: [{ src: src, type: "video/mp4" }],
+        }}
+        options={plyrOptions}
+      />
+      {isDrive && (
+        <p className="text-[10px] text-muted-foreground text-center mt-1">
+          ⚡ تم تحويل رابط Google Drive تلقائياً
+        </p>
+      )}
+    </div>
+  );
+}
+
+// -------------------- باقي الكود كما هو (AdminPage, Dashboard, Editor, إلخ) --------------------
 function AdminPage() {
   const { t } = useTranslation();
   const [authed, setAuthed] = useState(false);
@@ -50,7 +146,9 @@ function AdminPage() {
               </div>
             </div>
             <h2 className="font-display text-2xl text-center mb-2 gradient-gold-text">{t("admin.title")}</h2>
-            <p className="text-xs text-center text-muted-foreground mb-6">demo password: <span className="text-gold">khaleff2025</span></p>
+            <p className="text-xs text-center text-muted-foreground mb-6">
+              demo password: <span className="text-gold">khaleff2025</span>
+            </p>
             <input
               type="password"
               value={pw}
@@ -60,7 +158,10 @@ function AdminPage() {
               autoFocus
             />
             {error && <p className="text-xs text-destructive mb-3">{error}</p>}
-            <button type="submit" className="w-full py-3 bg-gold text-background uppercase tracking-widest text-xs rounded-md hover:opacity-90 transition">
+            <button
+              type="submit"
+              className="w-full py-3 bg-gold text-background uppercase tracking-widest text-xs rounded-md hover:opacity-90 transition"
+            >
               {t("admin.login")}
             </button>
           </form>
@@ -110,10 +211,16 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
       <div className="flex items-center justify-between mb-10">
         <h1 className="font-display text-4xl gradient-gold-text">{t("admin.title")}</h1>
         <div className="flex items-center gap-2">
-          <button onClick={startNew} className="inline-flex items-center gap-2 px-4 py-2 bg-gold text-background text-xs uppercase tracking-widest rounded-md hover:opacity-90">
+          <button
+            onClick={startNew}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-gold text-background text-xs uppercase tracking-widest rounded-md hover:opacity-90"
+          >
             <Plus className="h-4 w-4" /> {t("admin.new_article")}
           </button>
-          <button onClick={onLogout} className="inline-flex items-center gap-2 px-4 py-2 border border-gold/30 text-xs uppercase tracking-widest rounded-md hover:border-gold">
+          <button
+            onClick={onLogout}
+            className="inline-flex items-center gap-2 px-4 py-2 border border-gold/30 text-xs uppercase tracking-widest rounded-md hover:border-gold"
+          >
             <LogOut className="h-4 w-4" /> {t("admin.logout")}
           </button>
         </div>
@@ -132,38 +239,43 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
           {articles.length === 0 ? (
             <div className="text-center py-24 text-muted-foreground italic">{t("admin.no_articles")}</div>
           ) : (
-        <div className="border border-gold/20 rounded-lg overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-card/60 text-xs uppercase tracking-widest text-muted-foreground">
-              <tr>
-                <th className="text-start px-4 py-3">{t("nav.articles")}</th>
-                <th className="text-start px-4 py-3 hidden md:table-cell">{t("admin.fields.category")}</th>
-                <th className="text-start px-4 py-3 hidden md:table-cell">{t("admin.fields.slug")}</th>
-                <th className="w-px px-4 py-3"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {articles.map((a) => (
-                <tr key={a.id} className="border-t border-gold/10 hover:bg-card/40">
-                  <td className="px-4 py-3 font-display text-base">{a.title}</td>
-                  <td className="px-4 py-3 hidden md:table-cell text-gold text-xs uppercase tracking-widest"><TranslatedText text={categoryLabel(a.category, t)} /></td>
-                  <td className="px-4 py-3 hidden md:table-cell text-xs text-muted-foreground">{a.slug}</td>
-                  <td className="px-4 py-3 flex items-center gap-2">
-                    <button onClick={() => setEditing({ ...a, translations: a.translations ?? {} })} className="p-2 rounded hover:bg-accent text-muted-foreground hover:text-gold">
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => { if (confirm(t("admin.confirm_delete"))) articlesStore.remove(a.id); }}
-                      className="p-2 rounded hover:bg-accent text-muted-foreground hover:text-destructive"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            <div className="border border-gold/20 rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-card/60 text-xs uppercase tracking-widest text-muted-foreground">
+                  <tr>
+                    <th className="text-start px-4 py-3">{t("nav.articles")}</th>
+                    <th className="text-start px-4 py-3 hidden md:table-cell">{t("admin.fields.category")}</th>
+                    <th className="text-start px-4 py-3 hidden md:table-cell">{t("admin.fields.slug")}</th>
+                    <th className="w-px px-4 py-3"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {articles.map((a) => (
+                    <tr key={a.id} className="border-t border-gold/10 hover:bg-card/40">
+                      <td className="px-4 py-3 font-display text-base">{a.title}</td>
+                      <td className="px-4 py-3 hidden md:table-cell text-gold text-xs uppercase tracking-widest">
+                        <TranslatedText text={categoryLabel(a.category, t)} />
+                      </td>
+                      <td className="px-4 py-3 hidden md:table-cell text-xs text-muted-foreground">{a.slug}</td>
+                      <td className="px-4 py-3 flex items-center gap-2">
+                        <button
+                          onClick={() => setEditing({ ...a, translations: a.translations ?? {} })}
+                          className="p-2 rounded hover:bg-accent text-muted-foreground hover:text-gold"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => { if (confirm(t("admin.confirm_delete"))) articlesStore.remove(a.id); }}
+                          className="p-2 rounded hover:bg-accent text-muted-foreground hover:text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </>
       )}
@@ -220,7 +332,12 @@ function Editor({ article, onSave, onCancel }: { article: Article; onSave: (a: A
         </div>
         <div>
           <label className={labelCls}>{t("admin.fields.media")}</label>
-          <input className={inputCls} value={a.mediaUrl ?? ""} onChange={(e) => set("mediaUrl", e.target.value)} placeholder="https://..." />
+          <input
+            className={inputCls}
+            value={a.mediaUrl ?? ""}
+            onChange={(e) => set("mediaUrl", e.target.value)}
+            placeholder="https://drive.google.com/file/d/..."
+          />
           {a.mediaUrl && (
             <div className="mt-4">
               <MediaRenderer url={a.mediaUrl} videoAspect={a.videoAspect} />
@@ -228,7 +345,6 @@ function Editor({ article, onSave, onCancel }: { article: Article; onSave: (a: A
           )}
         </div>
 
-        {/* --- حقل تنسيق الفيديو الجديد --- */}
         <div>
           <label className={labelCls}>تنسيق عرض الفيديو</label>
           <select
@@ -244,7 +360,6 @@ function Editor({ article, onSave, onCancel }: { article: Article; onSave: (a: A
             اختيار التنسيق المناسب لتحسين تجربة المشاهدة، خاصة لفيديوهات الريلز الطويلة.
           </p>
         </div>
-        {/* --------------------------------- */}
 
         <div>
           <label className={labelCls}>{t("admin.fields.excerpt")}</label>
@@ -252,7 +367,12 @@ function Editor({ article, onSave, onCancel }: { article: Article; onSave: (a: A
         </div>
         <div>
           <label className={labelCls}>{t("admin.fields.content")}</label>
-          <textarea className={inputCls + " min-h-[400px] font-serif text-base leading-relaxed"} value={a.content} onChange={(e) => set("content", e.target.value)} required />
+          <textarea
+            className={inputCls + " min-h-[400px] font-serif text-base leading-relaxed"}
+            value={a.content}
+            onChange={(e) => set("content", e.target.value)}
+            required
+          />
         </div>
 
         <div className="flex items-center gap-3 pt-4">
@@ -323,9 +443,7 @@ function CategoriesManager() {
         {isAr ? "إدارة الأقسام" : "Manage Categories"}
       </h3>
       <p className="text-xs text-muted-foreground mb-4">
-        {isAr
-          ? "عدّل أو احذف أي قسم، وأضف أقسامًا جديدة بحرّية."
-          : "Edit or delete any category and add new ones freely."}
+        {isAr ? "عدّل أو احذف أي قسم، وأضف أقسامًا جديدة بحرّية." : "Edit or delete any category and add new ones freely."}
       </p>
 
       <div className="flex flex-col gap-2 mb-4">
@@ -414,9 +532,7 @@ function SocialsManager() {
   };
 
   const renderIcon = (name: SocialIcon) => {
-    const Icon =
-      (Icons as unknown as Record<string, React.ComponentType<{ className?: string }>>)[name] ??
-      Icons.Link;
+    const Icon = (Icons as unknown as Record<string, React.ComponentType<{ className?: string }>>)[name] ?? Icons.Link;
     return <Icon className="h-4 w-4" />;
   };
 
@@ -426,9 +542,7 @@ function SocialsManager() {
         {isAr ? "إدارة السوشيال ميديا" : "Manage Social Links"}
       </h3>
       <p className="text-xs text-muted-foreground mb-4">
-        {isAr
-          ? "ايقونات وروابط السوشيال ميديا الظاهرة في الفوتر."
-          : "Icons and links shown in the footer."}
+        {isAr ? "ايقونات وروابط السوشيال ميديا الظاهرة في الفوتر." : "Icons and links shown in the footer."}
       </p>
 
       <div className="flex flex-col gap-2 mb-4">
@@ -436,9 +550,7 @@ function SocialsManager() {
           <SocialRow key={s.id} item={s} renderIcon={renderIcon} isAr={isAr} />
         ))}
         {items.length === 0 && (
-          <p className="text-xs text-muted-foreground italic">
-            {isAr ? "لا توجد روابط بعد." : "No links yet."}
-          </p>
+          <p className="text-xs text-muted-foreground italic">{isAr ? "لا توجد روابط بعد." : "No links yet."}</p>
         )}
       </div>
 
