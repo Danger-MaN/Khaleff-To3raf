@@ -100,9 +100,14 @@ function ArticleByIdPage() {
           ))}
         </div>
 
+        {/* --- تمرير خاصية videoAspect إلى MediaRenderer --- */}
         {article.mediaUrl && (
           <div className="my-10">
-            <MediaRenderer url={article.mediaUrl} alt={title} />
+            <MediaRenderer
+              url={article.mediaUrl}
+              alt={title}
+              videoAspect={article.videoAspect}
+            />
           </div>
         )}
 
