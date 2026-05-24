@@ -32,8 +32,8 @@ function isGoogleDriveUrl(url: string): boolean {
   return /drive\.google\.com\/(file\/d\/|open\?id=)/i.test(url);
 }
 
-// استخراج معرف الفيديو من رابط Google Drive واستخدام دالة Netlify
-function getGoogleDriveProxiedUrl(url: string): string | null {
+// استخراج رابط مباشر من Google Drive (للتشغيل في Plyr)
+function getGoogleDriveDirectUrl(url: string): string | null {
   let fileId: string | null = null;
   const matchFile = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
   if (matchFile) {
@@ -43,9 +43,8 @@ function getGoogleDriveProxiedUrl(url: string): string | null {
     if (matchOpen) fileId = matchOpen[1];
   }
   if (!fileId) return null;
-  
-  // استخدام دالة Netlify الخاصة بنا
-  return `/.netlify/functions/google-drive?id=${fileId}`;
+  // رابط التشغيل المباشر (بدون iframe)
+  return `https://drive.google.com/uc?export=download&id=${fileId}`;
 }
 
 async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null> {
@@ -60,7 +59,7 @@ async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null>
   }
 }
 
-// ------------------- مكون عرض اللقطات -------------------
+// ------------------- مكون عرض اللقطات (الكامل الذي كان يعمل) -------------------
 interface ThumbnailStripProps {
   videoElement: HTMLVideoElement | null;
   onSeek: (time: number) => void;
@@ -224,7 +223,6 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<Plyr | null>(null);
 
-  // تحديد مصدر المحتوى
   useEffect(() => {
     setVideoSrc(null);
     setError(false);
@@ -238,10 +236,11 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
       return;
     }
 
+    // Google Drive: نحاول الحصول على رابط مباشر (لـ Plyr) وليس iframe
     if (isGoogleDriveUrl(url)) {
-      const proxiedUrl = getGoogleDriveProxiedUrl(url);
-      if (proxiedUrl) {
-        setVideoSrc(proxiedUrl);
+      const directUrl = getGoogleDriveDirectUrl(url);
+      if (directUrl) {
+        setVideoSrc(directUrl);
         return;
       } else {
         setError(true);
@@ -276,7 +275,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
     setError(true);
   }, [url]);
 
-  // تهيئة Plyr للفيديو المباشر فقط
+  // تهيئة Plyr للفيديو المباشر فقط (وليس YouTube iframe)
   useEffect(() => {
     if (!videoRef.current) return;
     if (!videoSrc) return;
@@ -310,7 +309,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
   if (loading) return <div className="p-8 text-center text-gold">جاري تجهيز الفيديو...</div>;
   if (error || !videoSrc) return <div className="p-8 text-center text-red-400">لا يمكن عرض المحتوى. <a href={url} target="_blank" rel="noopener noreferrer" className="underline">فتح الرابط ↗</a></div>;
 
-  // YouTube فقط مع iframe
+  // YouTube فقط (iframe)
   if (videoSrc.includes('youtube.com/embed')) {
     return (
       <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
@@ -341,9 +340,13 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
   } else if (videoAspect === "portrait") {
     containerStyle = { aspectRatio: '9/16', maxHeight: '80vh', width: 'auto', margin: '0 auto' };
     videoStyle = { width: '100%', height: '100%', objectFit: 'contain' };
+  } else {
+    // auto
+    containerStyle = { display: 'flex', justifyContent: 'center' };
+    videoStyle = { display: 'block', width: 'auto', height: 'auto', maxWidth: '100%', maxHeight: '80vh', objectFit: 'contain' };
   }
 
-  // الفيديو المباشر (بما في ذلك Drive و StreamTape والروابط المحلية)
+  // الفيديو المباشر (StreamTape، Drive، mp4، إلخ)
   return (
     <div className="w-full bg-black rounded-lg border border-gold/20 overflow-hidden">
       <div style={containerStyle} className="w-full">
