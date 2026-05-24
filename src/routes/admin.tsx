@@ -61,25 +61,25 @@ async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null>
 function getContainerStyle(videoAspect: VideoAspect): React.CSSProperties {
   switch (videoAspect) {
     case "landscape":
-      return { aspectRatio: "16/9", maxWidth: "100%" };
+      return { 
+        aspectRatio: "16 / 9", 
+        maxWidth: "100%",
+        width: "100%",
+      };
     case "portrait":
-      return { aspectRatio: "9/16", maxHeight: "80vh", width: "auto", margin: "0 auto" };
+      return { 
+        aspectRatio: "9 / 16", 
+        maxHeight: "80vh", 
+        width: "auto",
+        maxWidth: "100%",
+      };
     case "auto":
     default:
-      return { display: "flex", justifyContent: "center" };
-  }
-}
-
-// دالة للحصول على نمط الفيديو/iframe بناءً على videoAspect
-function getContentStyle(videoAspect: VideoAspect): React.CSSProperties {
-  switch (videoAspect) {
-    case "landscape":
-      return { width: "100%", height: "100%", objectFit: "contain" };
-    case "portrait":
-      return { width: "100%", height: "100%", objectFit: "contain" };
-    case "auto":
-    default:
-      return { display: "block", width: "auto", height: "auto", maxWidth: "100%", maxHeight: "80vh", objectFit: "contain", margin: "0 auto" };
+      return { 
+        display: "flex", 
+        justifyContent: "center",
+        alignItems: "center",
+      };
   }
 }
 
@@ -346,16 +346,15 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
   if (error || !videoSrc) return <div className="p-8 text-center text-red-400">لا يمكن عرض المحتوى. <a href={url} target="_blank" rel="noopener noreferrer" className="underline">فتح الرابط ↗</a></div>;
 
   const containerStyle = getContainerStyle(videoAspect);
-  const contentStyle = getContentStyle(videoAspect);
 
   // YouTube أو Google Drive (iframe)
   if (contentType === "youtube" || contentType === "googledrive") {
     return (
-      <div className="w-full bg-black rounded-lg border border-gold/20 overflow-hidden">
-        <div style={containerStyle} className="flex justify-center items-center">
+      <div className="w-full bg-black rounded-lg border border-gold/20 overflow-hidden flex justify-center">
+        <div style={containerStyle} className="overflow-hidden rounded-lg">
           <iframe
             src={videoSrc}
-            style={contentStyle}
+            style={{ width: "100%", height: "100%", border: "none" }}
             allowFullScreen
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           />
@@ -366,7 +365,13 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
 
   // الصور
   if (contentType === "image") {
-    return <img src={videoSrc} alt={alt} style={contentStyle} className="w-full rounded-lg border border-gold/20" />;
+    return (
+      <div className="w-full bg-black rounded-lg border border-gold/20 overflow-hidden flex justify-center">
+        <div style={containerStyle}>
+          <img src={videoSrc} alt={alt} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+        </div>
+      </div>
+    );
   }
 
   // الفيديو المباشر (MP4, Streamtape, etc.)
@@ -375,7 +380,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
       <div style={containerStyle} className="flex justify-center items-center">
         <video
           ref={videoRef}
-          style={contentStyle}
+          style={{ width: "100%", height: "100%", objectFit: "contain" }}
           playsInline
           crossOrigin="anonymous"
           preload="metadata"
