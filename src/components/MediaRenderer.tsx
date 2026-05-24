@@ -215,7 +215,7 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [playerReady, setPlayerReady] = useState(false);
-  const [videoDimensions, setVideoDimensions] = useState<{ width: number; height: number } | null>(null);
+  const [isPortrait, setIsPortrait] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<Plyr | null>(null);
 
@@ -224,7 +224,7 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     setVideoSrc(null);
     setError(false);
     setPlayerReady(false);
-    setVideoDimensions(null);
+    setIsPortrait(false);
     if (!url) return;
 
     const ytId = getYouTubeId(url);
@@ -273,20 +273,20 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     setError(true);
   }, [url]);
 
-  // استخراج أبعاد الفيديو الأصلي
+  // تحديد إذا كان الفيديو طويلاً (نسبة الارتفاع إلى العرض > 1.2 مثلاً)
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !videoSrc) return;
     if (videoSrc.includes('youtube.com/embed') || videoSrc.includes('drive.google.com/file/d/')) return;
 
-    const updateDimensions = () => {
+    const updateOrientation = () => {
       if (video.videoWidth && video.videoHeight) {
-        setVideoDimensions({ width: video.videoWidth, height: video.videoHeight });
+        setIsPortrait(video.videoHeight / video.videoWidth > 1.2);
       }
     };
-    video.addEventListener('loadedmetadata', updateDimensions);
-    if (video.readyState >= 1) updateDimensions();
-    return () => video.removeEventListener('loadedmetadata', updateDimensions);
+    video.addEventListener('loadedmetadata', updateOrientation);
+    if (video.readyState >= 1) updateOrientation();
+    return () => video.removeEventListener('loadedmetadata', updateOrientation);
   }, [videoSrc]);
 
   // تهيئة Plyr
@@ -322,7 +322,7 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
   if (loading) return <div className="p-8 text-center text-gold">جاري تجهيز الفيديو...</div>;
   if (error || !videoSrc) return <div className="p-8 text-center text-red-400">لا يمكن عرض المحتوى. <a href={url} target="_blank" rel="noopener noreferrer" className="underline">فتح الرابط ↗</a></div>;
 
-  // حالة iframe (YouTube أو Google Drive) - نعطيه نسبة 16/9 مع أقصى ارتفاع
+  // حالة iframe (YouTube أو Google Drive) - نعطيه نسبة 16/9
   if (videoSrc.includes('youtube.com/embed') || videoSrc.includes('drive.google.com/file/d/')) {
     return (
       <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
@@ -343,39 +343,34 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/20" />;
   }
 
-  // حالة الفيديو المباشر (mp4, webm, mov)
-  // نقوم بإنشاء حاوية تنكمش إلى حجم الفيديو (مع مراعاة الحد الأقصى للعرض)
-  const containerStyle: React.CSSProperties = {
-    display: 'flex',
-    justifyContent: 'center',
-    width: '100%',
-  };
-  
-  const videoWrapperStyle: React.CSSProperties = {
-    maxWidth: '100%',
-    width: videoDimensions ? 'auto' : '100%',
-    height: 'auto',
-    borderRadius: '0.5rem',
-    overflow: 'hidden',
-    border: '1px solid rgba(255, 215, 0, 0.2)',
-  };
-
-  const videoStyle: React.CSSProperties = {
-    display: 'block',
-    maxWidth: '100%',
-    maxHeight: '80vh',
-    width: 'auto',
-    height: 'auto',
-    margin: '0 auto',
-  };
-
+  // حالة الفيديو المباشر - مع دعم خاص للفيديوهات الطويلة (الريلز)
   return (
     <div className="w-full rounded-lg bg-black overflow-hidden">
-      <div style={containerStyle}>
-        <div style={videoWrapperStyle}>
+      <div className="flex justify-center">
+        <div
+          className="relative"
+          style={{
+            maxWidth: '100%',
+            width: isPortrait ? 'auto' : '100%',
+            height: isPortrait ? 'auto' : 'auto',
+            maxHeight: isPortrait ? '90vh' : 'none',
+            borderRadius: '0.5rem',
+            overflow: 'hidden',
+            border: '1px solid rgba(255, 215, 0, 0.2)',
+          }}
+        >
           <video
             ref={videoRef}
-            style={videoStyle}
+            className="block"
+            style={{
+              width: isPortrait ? 'auto' : '100%',
+              height: isPortrait ? '90vh' : 'auto',
+              maxWidth: '100%',
+              maxHeight: '90vh',
+              objectFit: 'contain',
+              display: 'block',
+              margin: '0 auto',
+            }}
             playsInline
             crossOrigin="anonymous"
             preload="metadata"
