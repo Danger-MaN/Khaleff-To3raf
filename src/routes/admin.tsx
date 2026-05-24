@@ -1,548 +1,389 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { useTranslation } from "react-i18next";
-import { Header } from "@/components/Header";
-import { articlesStore, slugify, type Article, type VideoAspect } from "@/lib/articles";
-import { categoriesStore, categoryLabel } from "@/lib/categories";
-import { SOCIAL_ICONS, socialsStore, type SocialIcon, type SocialLink } from "@/lib/socials";
-import * as Icons from "lucide-react";
-import { SUPPORTED_LANGS } from "@/lib/i18n";
-import { MediaRenderer } from "@/components/MediaRenderer";
-import { TranslatedText } from "@/components/TranslatedText";
-import { Plus, Pencil, Trash2, LogOut, Lock, X } from "lucide-react";
+"use client";
 
-export const Route = createFileRoute("/admin")({ component: AdminPage });
+import { useEffect, useRef, useState, useCallback } from "react";
+import Plyr from "plyr";
+import "plyr/dist/plyr.css";
+import type { VideoAspect } from "@/lib/articles";
 
-const ADMIN_PASSWORD = "khaleff2025";
-
-const AUTH_KEY = "kt_admin_auth";
-
-function AdminPage() {
-  const { t } = useTranslation();
-  const [authed, setAuthed] = useState(false);
-  const [pw, setPw] = useState("");
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    if (sessionStorage.getItem(AUTH_KEY) === "1") setAuthed(true);
-  }, []);
-
-  const login = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (pw === ADMIN_PASSWORD) {
-      sessionStorage.setItem(AUTH_KEY, "1");
-      setAuthed(true);
-      setError("");
-    } else {
-      setError(t("admin.wrong_password"));
-    }
-  };
-
-  return (
-    <div className="min-h-screen flex flex-col">
-      <Header />
-      {!authed ? (
-        <div className="flex-1 flex items-center justify-center px-6">
-          <form onSubmit={login} className="w-full max-w-sm bg-card/70 border border-gold/30 rounded-lg p-8 shadow-mystic">
-            <div className="flex items-center justify-center mb-6">
-              <div className="h-12 w-12 rounded-full border border-gold/60 flex items-center justify-center">
-                <Lock className="h-5 w-5 text-gold" />
-              </div>
-            </div>
-            <h2 className="font-display text-2xl text-center mb-2 gradient-gold-text">{t("admin.title")}</h2>
-            <p className="text-xs text-center text-muted-foreground mb-6">demo password: <span className="text-gold">khaleff2025</span></p>
-            <input
-              type="password"
-              value={pw}
-              onChange={(e) => setPw(e.target.value)}
-              placeholder={t("admin.password")}
-              className="w-full px-4 py-3 bg-input border border-gold/30 rounded-md outline-none focus:border-gold mb-3"
-              autoFocus
-            />
-            {error && <p className="text-xs text-destructive mb-3">{error}</p>}
-            <button type="submit" className="w-full py-3 bg-gold text-background uppercase tracking-widest text-xs rounded-md hover:opacity-90 transition">
-              {t("admin.login")}
-            </button>
-          </form>
-        </div>
-      ) : (
-        <Dashboard onLogout={() => { sessionStorage.removeItem(AUTH_KEY); setAuthed(false); }} />
-      )}
-    </div>
-  );
+// ------------------- دوال مساعدة -------------------
+function getYouTubeId(url: string): string | null {
+  const patterns = [
+    /youtu\.be\/([a-zA-Z0-9_-]{11})/,
+    /youtube\.com\/watch\?v=([a-zA-Z0-9_-]{11})/,
+    /youtube\.com\/embed\/([a-zA-Z0-9_-]{11})/,
+    /youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/,
+  ];
+  for (const p of patterns) {
+    const m = url.match(p);
+    if (m) return m[1];
+  }
+  return null;
 }
 
-function Dashboard({ onLogout }: { onLogout: () => void }) {
-  const { t } = useTranslation();
-  const [tick, setTick] = useState(0);
-  const [editing, setEditing] = useState<Article | null>(null);
+function isStreamTapeUrl(url: string): boolean {
+  return /streamtape\.com/i.test(url);
+}
+
+function isTeraboxUrl(url: string): boolean {
+  return /(terabox|1024terabox|teraboxapp|dubox|4funbox)\./i.test(url);
+}
+
+function isGoogleDriveUrl(url: string): boolean {
+  return /drive\.google\.com\/(file\/d\/|open\?id=)/i.test(url);
+}
+
+function getGoogleDriveEmbedUrl(url: string): string | null {
+  let fileId: string | null = null;
+  const matchFile = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (matchFile) {
+    fileId = matchFile[1];
+  } else {
+    const matchOpen = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if (matchOpen) fileId = matchOpen[1];
+  }
+  if (!fileId) return null;
+  return `https://drive.google.com/file/d/${fileId}/preview`;
+}
+
+async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null> {
+  try {
+    const infoRes = await fetch(`/.netlify/functions/streamtape?url=${encodeURIComponent(shareUrl)}`);
+    const infoData = await infoRes.json();
+    if (!infoData.success) return null;
+    return `/.netlify/functions/streamtape?direct=1&url=${encodeURIComponent(shareUrl)}`;
+  } catch (err) {
+    console.error("getStreamTapeProxiedUrl error:", err);
+    return null;
+  }
+}
+
+// ------------------- مكون عرض اللقطات -------------------
+interface ThumbnailStripProps {
+  videoElement: HTMLVideoElement | null;
+  onSeek: (time: number) => void;
+  isVisible?: boolean;
+}
+
+const SEEK_INTERVAL_MS = 3000;
+const THUMBNAIL_COUNT = 10;
+
+function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStripProps) {
+  const [thumbnails, setThumbnails] = useState<string[]>([]);
+  const [duration, setDuration] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(true);
+
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const isPlayingRef = useRef(isPlaying);
+  const activeIndexRef = useRef(activeIndex);
+  const thumbnailsLengthRef = useRef(0);
+  const durationRef = useRef(0);
+  const canvasRef = useRef<HTMLCanvasElement>(document.createElement('canvas'));
+
+  useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
+  useEffect(() => { activeIndexRef.current = activeIndex; }, [activeIndex]);
+  useEffect(() => { thumbnailsLengthRef.current = thumbnails.length; }, [thumbnails]);
+  useEffect(() => { durationRef.current = duration; }, [duration]);
+
+  const goToNextThumbnail = useCallback(() => {
+    const total = thumbnailsLengthRef.current;
+    if (total === 0) return;
+    setActiveIndex((activeIndexRef.current + 1) % total);
+  }, []);
 
   useEffect(() => {
-    const r = () => setTick((x) => x + 1);
-    window.addEventListener("kt_articles_changed", r);
-    window.addEventListener("kt_categories_changed", r);
+    if (loading || thumbnails.length === 0) return;
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    intervalRef.current = setInterval(() => {
+      if (isPlayingRef.current) goToNextThumbnail();
+    }, SEEK_INTERVAL_MS);
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+  }, [loading, thumbnails.length, goToNextThumbnail]);
+
+  useEffect(() => {
+    const video = videoElement;
+    if (!video) return;
+    const handlePlay = () => { if (isPlayingRef.current) setIsPlaying(false); };
+    const handlePause = () => { if (isPlayingRef.current) setIsPlaying(false); };
+    video.addEventListener('play', handlePlay);
+    video.addEventListener('pause', handlePause);
     return () => {
-      window.removeEventListener("kt_articles_changed", r);
-      window.removeEventListener("kt_categories_changed", r);
+      video.removeEventListener('play', handlePlay);
+      video.removeEventListener('pause', handlePause);
     };
-  }, []);
-
-  const articles = articlesStore.list();
-  void tick;
-
-  const startNew = () => {
-    setEditing({
-      id: `a-${Date.now()}`,
-      slug: "",
-      title: "",
-      excerpt: "",
-      content: "",
-      category: "philosophy",
-      mediaUrl: "",
-      videoAspect: "auto",
-      createdAt: Date.now(),
-      translations: {},
-    });
-  };
-
-  return (
-    <div className="flex-1 mx-auto max-w-6xl w-full px-6 py-12">
-      <div className="flex items-center justify-between mb-10">
-        <h1 className="font-display text-4xl gradient-gold-text">{t("admin.title")}</h1>
-        <div className="flex items-center gap-2">
-          <button onClick={startNew} className="inline-flex items-center gap-2 px-4 py-2 bg-gold text-background text-xs uppercase tracking-widest rounded-md hover:opacity-90">
-            <Plus className="h-4 w-4" /> {t("admin.new_article")}
-          </button>
-          <button onClick={onLogout} className="inline-flex items-center gap-2 px-4 py-2 border border-gold/30 text-xs uppercase tracking-widest rounded-md hover:border-gold">
-            <LogOut className="h-4 w-4" /> {t("admin.logout")}
-          </button>
-        </div>
-      </div>
-
-      {editing ? (
-        <Editor
-          article={editing}
-          onCancel={() => setEditing(null)}
-          onSave={(a) => { articlesStore.upsert(a); setEditing(null); }}
-        />
-      ) : (
-        <>
-          <CategoriesManager />
-          <SocialsManager />
-          {articles.length === 0 ? (
-            <div className="text-center py-24 text-muted-foreground italic">{t("admin.no_articles")}</div>
-          ) : (
-        <div className="border border-gold/20 rounded-lg overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-card/60 text-xs uppercase tracking-widest text-muted-foreground">
-              <tr>
-                <th className="text-start px-4 py-3">{t("nav.articles")}</th>
-                <th className="text-start px-4 py-3 hidden md:table-cell">{t("admin.fields.category")}</th>
-                <th className="text-start px-4 py-3 hidden md:table-cell">{t("admin.fields.slug")}</th>
-                <th className="w-px px-4 py-3"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {articles.map((a) => (
-                <tr key={a.id} className="border-t border-gold/10 hover:bg-card/40">
-                  <td className="px-4 py-3 font-display text-base">{a.title}</td>
-                  <td className="px-4 py-3 hidden md:table-cell text-gold text-xs uppercase tracking-widest"><TranslatedText text={categoryLabel(a.category, t)} /></td>
-                  <td className="px-4 py-3 hidden md:table-cell text-xs text-muted-foreground">{a.slug}</td>
-                  <td className="px-4 py-3 flex items-center gap-2">
-                    <button onClick={() => setEditing({ ...a, translations: a.translations ?? {} })} className="p-2 rounded hover:bg-accent text-muted-foreground hover:text-gold">
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => { if (confirm(t("admin.confirm_delete"))) articlesStore.remove(a.id); }}
-                      className="p-2 rounded hover:bg-accent text-muted-foreground hover:text-destructive"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
-function Editor({ article, onSave, onCancel }: { article: Article; onSave: (a: Article) => void; onCancel: () => void }) {
-  const { t } = useTranslation();
-  const [a, setA] = useState<Article>(article);
-  const [trLang, setTrLang] = useState<string>("en");
-  const trEntry = a.translations?.[trLang] ?? { title: "", excerpt: "", content: "" };
-
-  const set = <K extends keyof Article>(k: K, v: Article[K]) => setA({ ...a, [k]: v });
-  const setTr = (field: "title" | "excerpt" | "content", v: string) => {
-    setA({
-      ...a,
-      translations: {
-        ...(a.translations ?? {}),
-        [trLang]: { ...trEntry, [field]: v },
-      },
-    });
-  };
-
-  const submit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const slug = a.slug.trim() || slugify(a.title);
-    onSave({ ...a, slug });
-  };
-
-  const inputCls = "w-full px-4 py-3 bg-input border border-gold/30 rounded-md outline-none focus:border-gold text-sm";
-  const labelCls = "block text-xs uppercase tracking-widest text-muted-foreground mb-2";
-
-  return (
-    <form onSubmit={submit} className="grid lg:grid-cols-[1fr_360px] gap-8">
-      <div className="space-y-5">
-        <div>
-          <label className={labelCls}>{t("admin.fields.title")}</label>
-          <input className={inputCls} value={a.title} onChange={(e) => set("title", e.target.value)} required />
-        </div>
-        <div className="grid md:grid-cols-2 gap-5">
-          <div>
-            <label className={labelCls}>{t("admin.fields.slug")}</label>
-            <input className={inputCls} value={a.slug} onChange={(e) => set("slug", e.target.value)} placeholder="auto" />
-          </div>
-          <div>
-            <label className={labelCls}>{t("admin.fields.category")}</label>
-            <select className={inputCls} value={a.category} onChange={(e) => set("category", e.target.value)}>
-              {categoriesStore.list().map((c) => (
-                <option key={c.key} value={c.key}>{c.label}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-        <div>
-          <label className={labelCls}>{t("admin.fields.media")}</label>
-          <input className={inputCls} value={a.mediaUrl ?? ""} onChange={(e) => set("mediaUrl", e.target.value)} placeholder="https://..." />
-          {a.mediaUrl && (
-            <div className="mt-4">
-              <MediaRenderer url={a.mediaUrl} videoAspect={a.videoAspect} />
-            </div>
-          )}
-        </div>
-
-        {/* --- حقل تنسيق الفيديو الجديد --- */}
-        <div>
-          <label className={labelCls}>تنسيق عرض الفيديو</label>
-          <select
-            className={inputCls}
-            value={a.videoAspect ?? "auto"}
-            onChange={(e) => set("videoAspect", e.target.value as VideoAspect)}
-          >
-            <option value="auto">تلقائي (حسب حجم الفيديو الأصلي)</option>
-            <option value="landscape">أفقي (16:9) - للمحتوى التقليدي</option>
-            <option value="portrait">رأسي (9:16) - للـ Reels / Shorts</option>
-          </select>
-          <p className="text-[10px] text-muted-foreground mt-1">
-            اختيار التنسيق المناسب لتحسين تجربة المشاهدة، خاصة لفيديوهات الريلز الطويلة.
-          </p>
-        </div>
-        {/* --------------------------------- */}
-
-        <div>
-          <label className={labelCls}>{t("admin.fields.excerpt")}</label>
-          <textarea className={inputCls} rows={3} value={a.excerpt} onChange={(e) => set("excerpt", e.target.value)} required />
-        </div>
-        <div>
-          <label className={labelCls}>{t("admin.fields.content")}</label>
-          <textarea className={inputCls + " min-h-[400px] font-serif text-base leading-relaxed"} value={a.content} onChange={(e) => set("content", e.target.value)} required />
-        </div>
-
-        <div className="flex items-center gap-3 pt-4">
-          <button type="submit" className="px-6 py-3 bg-gold text-background uppercase tracking-widest text-xs rounded-md hover:opacity-90">
-            {t("admin.save")}
-          </button>
-          <button type="button" onClick={onCancel} className="px-6 py-3 border border-gold/30 uppercase tracking-widest text-xs rounded-md hover:border-gold">
-            {t("admin.cancel")}
-          </button>
-        </div>
-      </div>
-
-      <aside className="bg-card/60 border border-gold/20 rounded-lg p-5 h-fit sticky top-24">
-        <h3 className="font-display text-lg gradient-gold-text mb-1">{t("admin.fields.translations")}</h3>
-        <p className="text-xs text-muted-foreground mb-4">Override per-language. Empty = auto translate / original.</p>
-        <label className={labelCls}>{t("admin.fields.lang")}</label>
-        <select className={inputCls + " mb-4"} value={trLang} onChange={(e) => setTrLang(e.target.value)}>
-          {SUPPORTED_LANGS.filter((l) => l.code !== "ar").map((l) => (
-            <option key={l.code} value={l.code}>{l.label}</option>
-          ))}
-        </select>
-        <div className="space-y-3">
-          <input className={inputCls} placeholder={t("admin.fields.title")} value={trEntry.title} onChange={(e) => setTr("title", e.target.value)} />
-          <textarea className={inputCls} rows={2} placeholder={t("admin.fields.excerpt")} value={trEntry.excerpt} onChange={(e) => setTr("excerpt", e.target.value)} />
-          <textarea className={inputCls + " min-h-[160px]"} placeholder={t("admin.fields.content")} value={trEntry.content} onChange={(e) => setTr("content", e.target.value)} />
-        </div>
-      </aside>
-    </form>
-  );
-}
-
-function CategoriesManager() {
-  const { i18n } = useTranslation();
-  const isAr = (i18n.language?.split("-")[0] ?? "ar") === "ar";
-  const [tick, setTick] = useState(0);
-  const [label, setLabel] = useState("");
-  const [editKey, setEditKey] = useState<string | null>(null);
-  const [editLabel, setEditLabel] = useState("");
+  }, [videoElement]);
 
   useEffect(() => {
-    const r = () => setTick((x) => x + 1);
-    window.addEventListener("kt_categories_changed", r);
-    return () => window.removeEventListener("kt_categories_changed", r);
-  }, []);
-  void tick;
-  const all = categoriesStore.list();
+    if (durationRef.current > 0 && thumbnails.length > 0) {
+      const step = durationRef.current / THUMBNAIL_COUNT;
+      onSeek(step * activeIndex);
+    }
+  }, [activeIndex, thumbnails.length, onSeek]);
 
-  const add = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!label.trim()) return;
-    categoriesStore.add(label);
-    setLabel("");
-  };
+  const generateThumbnails = useCallback(async () => {
+    if (!videoElement) return;
+    setLoading(true);
+    const vid = videoElement;
+    const dur = vid.duration;
+    if (!dur || isNaN(dur)) return;
+    setDuration(dur);
+    const thumbs: string[] = [];
+    const step = dur / THUMBNAIL_COUNT;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    canvas.width = 120;
+    canvas.height = 68;
 
-  const startEdit = (key: string, current: string) => {
-    setEditKey(key);
-    setEditLabel(current);
-  };
-  const saveEdit = () => {
-    if (editKey && editLabel.trim()) categoriesStore.update(editKey, editLabel);
-    setEditKey(null);
-    setEditLabel("");
-  };
+    for (let i = 0; i < THUMBNAIL_COUNT; i++) {
+      vid.currentTime = step * i;
+      await new Promise<void>((resolve) => {
+        const seekedHandler = () => {
+          vid.removeEventListener('seeked', seekedHandler);
+          try {
+            ctx?.drawImage(vid, 0, 0, canvas.width, canvas.height);
+            thumbs.push(canvas.toDataURL('image/jpeg', 0.6));
+          } catch { thumbs.push(''); }
+          resolve();
+        };
+        vid.addEventListener('seeked', seekedHandler);
+      });
+    }
+    setThumbnails(thumbs);
+    setLoading(false);
+  }, [videoElement]);
 
-  return (
-    <div className="mb-10 border border-gold/20 rounded-lg p-5 bg-card/40">
-      <h3 className="font-display text-lg gradient-gold-text mb-1">
-        {isAr ? "إدارة الأقسام" : "Manage Categories"}
-      </h3>
-      <p className="text-xs text-muted-foreground mb-4">
-        {isAr
-          ? "عدّل أو احذف أي قسم، وأضف أقسامًا جديدة بحرّية."
-          : "Edit or delete any category and add new ones freely."}
-      </p>
-
-      <div className="flex flex-col gap-2 mb-4">
-        {all.map((c) => (
-          <div key={c.key} className="flex items-center gap-2 px-3 py-2 rounded-md border border-gold/30 bg-background/40">
-            {editKey === c.key ? (
-              <>
-                <input
-                  value={editLabel}
-                  onChange={(e) => setEditLabel(e.target.value)}
-                  className="flex-1 px-3 py-1.5 bg-input border border-gold/30 rounded-md text-sm outline-none focus:border-gold"
-                  autoFocus
-                />
-                <button type="button" onClick={saveEdit} className="px-3 py-1.5 bg-gold text-background text-xs uppercase tracking-widest rounded-md hover:opacity-90">
-                  {isAr ? "حفظ" : "Save"}
-                </button>
-                <button type="button" onClick={() => setEditKey(null)} className="p-1.5 rounded hover:bg-accent text-muted-foreground">
-                  <X className="h-4 w-4" />
-                </button>
-              </>
-            ) : (
-              <>
-                <span className="flex-1 text-sm text-gold"><TranslatedText text={c.label} /></span>
-                <span className="text-[10px] text-muted-foreground uppercase tracking-widest hidden sm:inline">{c.key}</span>
-                <button type="button" onClick={() => startEdit(c.key, c.label)} className="p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-gold">
-                  <Pencil className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (confirm(isAr ? "حذف هذا القسم؟" : "Delete this category?")) {
-                      categoriesStore.remove(c.key);
-                    }
-                  }}
-                  className="p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-destructive"
-                  aria-label="remove"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </>
-            )}
-          </div>
-        ))}
-      </div>
-
-      <form onSubmit={add} className="flex flex-col gap-2">
-        <input
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
-          placeholder={isAr ? "اسم القسم الجديد" : "New category name"}
-          className="w-full px-4 py-2 bg-input border border-gold/30 rounded-md outline-none focus:border-gold text-sm"
-        />
-        <button type="submit" className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-gold text-background text-xs uppercase tracking-widest rounded-md hover:opacity-90 self-start">
-          <Plus className="h-4 w-4" /> {isAr ? "إضافة" : "Add"}
-        </button>
-      </form>
-    </div>
-  );
-}
-
-function SocialsManager() {
-  const { i18n } = useTranslation();
-  const isAr = (i18n.language?.split("-")[0] ?? "ar") === "ar";
-  const [tick, setTick] = useState(0);
-  const [draft, setDraft] = useState<{ label: string; href: string; icon: SocialIcon }>({
-    label: "",
-    href: "",
-    icon: "Globe",
-  });
+  const restartTimer = useCallback(() => { setActiveIndex(0); setIsPlaying(true); }, []);
+  const handleThumbnailClick = useCallback((index: number, time: number) => { setIsPlaying(false); setActiveIndex(index); onSeek(time); }, [onSeek]);
 
   useEffect(() => {
-    const r = () => setTick((x) => x + 1);
-    window.addEventListener("kt_socials_changed", r);
-    return () => window.removeEventListener("kt_socials_changed", r);
-  }, []);
-  void tick;
-  const items = socialsStore.list();
+    if (!videoElement) return;
+    setIsPlaying(true);
+    setActiveIndex(0);
+    if (videoElement.readyState >= 2) generateThumbnails();
+    else videoElement.addEventListener('loadedmetadata', generateThumbnails, { once: true });
+  }, [videoElement, generateThumbnails]);
 
-  const inputCls = "px-3 py-2 bg-input border border-gold/30 rounded-md outline-none focus:border-gold text-sm";
+  if (!isVisible) return null;
+  if (loading) return <div className="flex justify-center items-center gap-2 mt-3 p-2 bg-black/50 rounded-lg"><div className="animate-spin rounded-full h-5 w-5 border-2 border-gold border-t-transparent"></div><span className="text-xs text-gold/70">جاري تحضير المشاهد...</span></div>;
+  if (thumbnails.length === 0) return null;
 
-  const add = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!draft.label.trim() || !draft.href.trim()) return;
-    socialsStore.add(draft);
-    setDraft({ label: "", href: "", icon: "Globe" });
-  };
-
-  const renderIcon = (name: SocialIcon) => {
-    const Icon =
-      (Icons as unknown as Record<string, React.ComponentType<{ className?: string }>>)[name] ??
-      Icons.Link;
-    return <Icon className="h-4 w-4" />;
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   return (
-    <div className="mb-10 border border-gold/20 rounded-lg p-5 bg-card/40">
-      <h3 className="font-display text-lg gradient-gold-text mb-1">
-        {isAr ? "إدارة السوشيال ميديا" : "Manage Social Links"}
-      </h3>
-      <p className="text-xs text-muted-foreground mb-4">
-        {isAr
-          ? "ايقونات وروابط السوشيال ميديا الظاهرة في الفوتر."
-          : "Icons and links shown in the footer."}
-      </p>
-
-      <div className="flex flex-col gap-2 mb-4">
-        {items.map((s) => (
-          <SocialRow key={s.id} item={s} renderIcon={renderIcon} isAr={isAr} />
-        ))}
-        {items.length === 0 && (
-          <p className="text-xs text-muted-foreground italic">
-            {isAr ? "لا توجد روابط بعد." : "No links yet."}
-          </p>
-        )}
+    <div className="mt-3 w-full">
+      <div className="flex justify-between items-center mb-2 px-1">
+        <div className="flex items-center gap-3">
+          <span className="text-[11px] text-white/60">
+            {isPlaying ? `🔄 تسليط ضوء تلقائي (كل ${SEEK_INTERVAL_MS/1000} ثانية)` : '⏸️ توقف مؤقت'}
+          </span>
+          <span className="text-[11px] text-gold/80">{activeIndex + 1} / {THUMBNAIL_COUNT}</span>
+        </div>
+        {!isPlaying && <button onClick={restartTimer} className="text-[11px] text-gold/80 hover:text-gold">▶ إعادة التشغيل</button>}
       </div>
-
-      <form onSubmit={add} className="grid sm:grid-cols-[1fr_1.5fr_auto_auto] gap-2">
-        <input
-          className={inputCls}
-          placeholder={isAr ? "الاسم" : "Label"}
-          value={draft.label}
-          onChange={(e) => setDraft({ ...draft, label: e.target.value })}
-        />
-        <input
-          className={inputCls}
-          placeholder="https://..."
-          value={draft.href}
-          onChange={(e) => setDraft({ ...draft, href: e.target.value })}
-        />
-        <select
-          className={inputCls}
-          value={draft.icon}
-          onChange={(e) => setDraft({ ...draft, icon: e.target.value as SocialIcon })}
-        >
-          {SOCIAL_ICONS.map((i) => (
-            <option key={i} value={i}>{i}</option>
-          ))}
-        </select>
-        <button type="submit" className="inline-flex items-center gap-2 px-4 py-2 bg-gold text-background text-xs uppercase tracking-widest rounded-md hover:opacity-90">
-          <Plus className="h-4 w-4" /> {isAr ? "إضافة" : "Add"}
-        </button>
-      </form>
+      <div className="flex gap-2 overflow-x-auto scrollbar-thin scrollbar-track-gray-800 scrollbar-thumb-gold/50 pb-2">
+        {thumbnails.map((thumb, idx) => {
+          const time = (duration / THUMBNAIL_COUNT) * idx;
+          const percentage = Math.round((time / duration) * 100);
+          const isActive = activeIndex === idx;
+          return (
+            <button key={idx} onClick={() => handleThumbnailClick(idx, time)} className={`flex flex-col items-center gap-1 transition-all hover:scale-105 focus:outline-none group flex-shrink-0 ${isActive ? 'scale-105' : ''}`}>
+              <div className="relative">
+                <img src={thumb} alt={`مشهد ${idx+1}`} className={`w-28 h-16 object-cover rounded-lg border transition-all ${isActive ? 'border-gold ring-2 ring-gold/50 shadow-lg' : 'border-gold/30 group-hover:border-gold'}`} loading="lazy" />
+                <div className="absolute bottom-1 right-1 bg-black/70 text-[10px] px-1 rounded text-gold">{percentage}%</div>
+                {isActive && <div className="absolute -top-2 left-1/2 transform -translate-x-1/2 bg-gold text-black text-[10px] px-1.5 py-0.5 rounded-full whitespace-nowrap">الحالي</div>}
+              </div>
+              <span className={`text-[10px] ${isActive ? 'text-gold font-medium' : 'text-white/70 group-hover:text-gold'}`}>{formatTime(time)}</span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
 
-function SocialRow({
-  item,
-  renderIcon,
-  isAr,
-}: {
-  item: SocialLink;
-  renderIcon: (name: SocialIcon) => React.ReactNode;
-  isAr: boolean;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(item);
+// ------------------- المكون الرئيسي -------------------
+interface MediaRendererProps {
+  url?: string;
+  alt?: string;
+  videoAspect?: VideoAspect;
+}
 
-  const save = () => {
-    socialsStore.update(item.id, { label: draft.label, href: draft.href, icon: draft.icon });
-    setEditing(false);
+export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRendererProps) {
+  const [videoSrc, setVideoSrc] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+  const [playerReady, setPlayerReady] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const playerRef = useRef<Plyr | null>(null);
+
+  useEffect(() => {
+    setVideoSrc(null);
+    setError(false);
+    setPlayerReady(false);
+    if (!url) return;
+
+    const ytId = getYouTubeId(url);
+    if (ytId) {
+      setVideoSrc(`https://www.youtube.com/embed/${ytId}`);
+      setPlayerReady(true);
+      return;
+    }
+
+    if (isGoogleDriveUrl(url)) {
+      const embedUrl = getGoogleDriveEmbedUrl(url);
+      if (embedUrl) {
+        setVideoSrc(embedUrl);
+        setPlayerReady(true);
+        return;
+      } else {
+        setError(true);
+        return;
+      }
+    }
+
+    if (isStreamTapeUrl(url)) {
+      setLoading(true);
+      getStreamTapeProxiedUrl(url)
+        .then(src => src ? setVideoSrc(src) : setError(true))
+        .catch(() => setError(true))
+        .finally(() => setLoading(false));
+      return;
+    }
+
+    if (isTeraboxUrl(url)) {
+      setError(true);
+      return;
+    }
+
+    if (/\.(mp4|webm|mov|ogg)/i.test(url)) {
+      setVideoSrc(url);
+      return;
+    }
+
+    if (/\.(jpg|jpeg|png|gif|webp|avif)/i.test(url)) {
+      setVideoSrc(url);
+      return;
+    }
+
+    setError(true);
+  }, [url]);
+
+  useEffect(() => {
+    if (!videoRef.current) return;
+    if (!videoSrc) return;
+    if (videoSrc.includes('youtube.com/embed') || videoSrc.includes('drive.google.com/file/d/')) return;
+
+    if (playerRef.current) playerRef.current.destroy();
+
+    const initializePlayer = () => {
+      if (!videoRef.current) return;
+      playerRef.current = new Plyr(videoRef.current, {
+        controls: ["play-large", "play", "progress", "current-time", "duration", "mute", "captions", "settings", "pip", "airplay", "fullscreen"],
+        disableContextMenu: true,
+        seekTime: 10,
+        speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
+        download: false,
+        storage: { enabled: true, key: 'plyr' },
+      });
+      setPlayerReady(true);
+    };
+
+    if (videoRef.current.readyState >= 1) initializePlayer();
+    else videoRef.current.addEventListener('loadedmetadata', initializePlayer, { once: true });
+
+    return () => { playerRef.current?.destroy(); playerRef.current = null; setPlayerReady(false); };
+  }, [videoSrc]);
+
+  const handleSeek = (time: number) => {
+    if (videoRef.current) videoRef.current.currentTime = time;
   };
 
-  const inputCls = "px-3 py-1.5 bg-input border border-gold/30 rounded-md outline-none focus:border-gold text-sm";
+  if (loading) return <div className="p-8 text-center text-gold">جاري تجهيز الفيديو...</div>;
+  if (error || !videoSrc) return <div className="p-8 text-center text-red-400">لا يمكن عرض المحتوى. <a href={url} target="_blank" rel="noopener noreferrer" className="underline">فتح الرابط ↗</a></div>;
 
-  if (editing) {
+  // YouTube / Google Drive (نسبة 16:9 ثابتة)
+  if (videoSrc.includes('youtube.com/embed') || videoSrc.includes('drive.google.com/file/d/')) {
     return (
-      <div className="grid sm:grid-cols-[auto_1fr_1.5fr_auto_auto] gap-2 items-center px-3 py-2 rounded-md border border-gold/30 bg-background/40">
-        <span className="h-8 w-8 rounded-full border border-gold/30 flex items-center justify-center text-gold">
-          {renderIcon(draft.icon)}
-        </span>
-        <input className={inputCls} value={draft.label} onChange={(e) => setDraft({ ...draft, label: e.target.value })} />
-        <input className={inputCls} value={draft.href} onChange={(e) => setDraft({ ...draft, href: e.target.value })} />
-        <select
-          className={inputCls}
-          value={draft.icon}
-          onChange={(e) => setDraft({ ...draft, icon: e.target.value as SocialIcon })}
-        >
-          {SOCIAL_ICONS.map((i) => (
-            <option key={i} value={i}>{i}</option>
-          ))}
-        </select>
-        <div className="flex items-center gap-1">
-          <button type="button" onClick={save} className="px-3 py-1.5 bg-gold text-background text-xs uppercase tracking-widest rounded-md hover:opacity-90">
-            {isAr ? "حفظ" : "Save"}
-          </button>
-          <button type="button" onClick={() => { setDraft(item); setEditing(false); }} className="p-1.5 rounded hover:bg-accent text-muted-foreground">
-            <X className="h-4 w-4" />
-          </button>
+      <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
+        <div className="relative w-full" style={{ aspectRatio: '16/9' }}>
+          <iframe
+            src={videoSrc}
+            className="absolute inset-0 w-full h-full"
+            allowFullScreen
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          />
         </div>
       </div>
     );
   }
 
+  // الصور
+  if (/\.(jpg|jpeg|png|gif|webp|avif)/i.test(videoSrc)) {
+    return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/20" />;
+  }
+
+  // الفيديو المباشر - تطبيق videoAspect بقوة
+  let containerClasses = "w-full bg-black rounded-lg border border-gold/20 overflow-hidden flex justify-center";
+  let videoClasses = "";
+  let videoStyle: React.CSSProperties = { display: 'block', objectFit: 'contain' };
+
+  if (videoAspect === "portrait") {
+    // فيديو رأسي (Reels/Shorts) - ارتفاع كامل وعرض محدود
+    containerClasses += " items-center";
+    videoStyle = {
+      display: 'block',
+      width: 'auto',
+      height: 'auto',
+      maxWidth: '100%',
+      maxHeight: '85vh',
+      objectFit: 'contain',
+      margin: '0 auto',
+    };
+  } else if (videoAspect === "landscape") {
+    // فيديو أفقي - عرض كامل
+    videoStyle = {
+      display: 'block',
+      width: '100%',
+      height: 'auto',
+      objectFit: 'contain',
+    };
+  } else {
+    // تلقائي - يحترم الأبعاد الأصلية
+    videoStyle = {
+      display: 'block',
+      width: '100%',
+      height: 'auto',
+      objectFit: 'contain',
+    };
+  }
+
   return (
-    <div className="flex items-center gap-3 px-3 py-2 rounded-md border border-gold/30 bg-background/40">
-      <span className="h-8 w-8 rounded-full border border-gold/30 flex items-center justify-center text-gold shrink-0">
-        {renderIcon(item.icon)}
-      </span>
-      <div className="flex-1 min-w-0">
-        <div className="text-sm text-gold truncate">{item.label}</div>
-        <div className="text-xs text-muted-foreground truncate">{item.href}</div>
-      </div>
-      <button type="button" onClick={() => setEditing(true)} className="p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-gold">
-        <Pencil className="h-4 w-4" />
-      </button>
-      <button
-        type="button"
-        onClick={() => {
-          if (confirm(isAr ? "حذف هذا الرابط؟" : "Delete this link?")) {
-            socialsStore.remove(item.id);
-          }
-        }}
-        className="p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-destructive"
+    <div className={containerClasses}>
+      <video
+        ref={videoRef}
+        className={videoClasses}
+        style={videoStyle}
+        playsInline
+        crossOrigin="anonymous"
+        preload="metadata"
       >
-        <Trash2 className="h-4 w-4" />
-      </button>
+        <source src={videoSrc} type="video/mp4" />
+        متصفحك لا يدعم تشغيل الفيديو.
+      </video>
+      {playerReady && (
+        <div className="mt-2 w-full px-2">
+          <ThumbnailStrip
+            videoElement={videoRef.current}
+            onSeek={handleSeek}
+            isVisible={true}
+          />
+        </div>
+      )}
     </div>
   );
 }
