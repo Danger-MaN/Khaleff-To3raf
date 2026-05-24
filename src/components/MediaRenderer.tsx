@@ -58,7 +58,7 @@ async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null>
   }
 }
 
-// ------------------- مكون عرض اللقطات (نفس الكود مع تعديل بسيط في العرض) -------------------
+// ------------------- مكون عرض اللقطات (ThumbnailStrip) -------------------
 interface ThumbnailStripProps {
   videoElement: HTMLVideoElement | null;
   onSeek: (time: number) => void;
@@ -91,10 +91,8 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   const goToNextThumbnail = useCallback(() => {
     const total = thumbnailsLengthRef.current;
     if (total === 0) return;
-    const current = activeIndexRef.current;
-    const next = current + 1;
-    const newIndex = next >= total ? 0 : next;
-    setActiveIndex(newIndex);
+    const next = (activeIndexRef.current + 1) % total;
+    setActiveIndex(next);
   }, []);
 
   useEffect(() => {
@@ -122,8 +120,7 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   useEffect(() => {
     if (durationRef.current > 0 && thumbnails.length > 0) {
       const step = durationRef.current / THUMBNAIL_COUNT;
-      const time = step * activeIndex;
-      onSeek(time);
+      onSeek(step * activeIndex);
     }
   }, [activeIndex, thumbnails.length, onSeek]);
 
@@ -142,17 +139,14 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
     canvas.height = 68;
 
     for (let i = 0; i < THUMBNAIL_COUNT; i++) {
-      const time = step * i;
-      vid.currentTime = time;
+      vid.currentTime = step * i;
       await new Promise<void>((resolve) => {
         const seekedHandler = () => {
           vid.removeEventListener('seeked', seekedHandler);
           try {
             ctx?.drawImage(vid, 0, 0, canvas.width, canvas.height);
             thumbs.push(canvas.toDataURL('image/jpeg', 0.6));
-          } catch (e) {
-            thumbs.push('');
-          }
+          } catch { thumbs.push(''); }
           resolve();
         };
         vid.addEventListener('seeked', seekedHandler);
@@ -163,21 +157,14 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   }, [videoElement]);
 
   const restartTimer = useCallback(() => { setActiveIndex(0); setIsPlaying(true); }, []);
-  const handleThumbnailClick = useCallback((index: number, time: number) => {
-    setIsPlaying(false);
-    setActiveIndex(index);
-    onSeek(time);
-  }, [onSeek]);
+  const handleThumbnailClick = useCallback((index: number, time: number) => { setIsPlaying(false); setActiveIndex(index); onSeek(time); }, [onSeek]);
 
   useEffect(() => {
     if (!videoElement) return;
     setIsPlaying(true);
     setActiveIndex(0);
-    if (videoElement.readyState >= 2) {
-      generateThumbnails();
-    } else {
-      videoElement.addEventListener('loadedmetadata', generateThumbnails, { once: true });
-    }
+    if (videoElement.readyState >= 2) generateThumbnails();
+    else videoElement.addEventListener('loadedmetadata', generateThumbnails, { once: true });
   }, [videoElement, generateThumbnails]);
 
   if (!isVisible) return null;
@@ -195,7 +182,7 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
       <div className="flex justify-between items-center mb-2 px-1">
         <div className="flex items-center gap-3">
           <span className="text-[11px] text-white/60">
-            {isPlaying ? `🔄 تسليط ضوء تلقائي (كل ${SEEK_INTERVAL_MS/1000} ثانية)` : '⏸️ توقف مؤقت (التفاعل مع الفيديو يوقف التلقائي)'}
+            {isPlaying ? `🔄 تسليط ضوء تلقائي (كل ${SEEK_INTERVAL_MS/1000} ثانية)` : '⏸️ توقف مؤقت'}
           </span>
           <span className="text-[11px] text-gold/80">{activeIndex + 1} / {THUMBNAIL_COUNT}</span>
         </div>
@@ -203,18 +190,17 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
       </div>
       <div className="flex gap-2 overflow-x-auto scrollbar-thin scrollbar-track-gray-800 scrollbar-thumb-gold/50 pb-2">
         {thumbnails.map((thumb, idx) => {
-          const step = duration / THUMBNAIL_COUNT;
-          const time = step * idx;
+          const time = (duration / THUMBNAIL_COUNT) * idx;
           const percentage = Math.round((time / duration) * 100);
           const isActive = activeIndex === idx;
           return (
             <button key={idx} onClick={() => handleThumbnailClick(idx, time)} className={`flex flex-col items-center gap-1 transition-all hover:scale-105 focus:outline-none group flex-shrink-0 ${isActive ? 'scale-105' : ''}`}>
               <div className="relative">
-                <img src={thumb} alt={`مشهد ${idx + 1}`} className={`w-28 h-16 object-cover rounded-lg border transition-all ${isActive ? 'border-gold ring-2 ring-gold/50 shadow-lg shadow-gold/20' : 'border-gold/30 group-hover:border-gold'}`} />
+                <img src={thumb} alt={`مشهد ${idx+1}`} className={`w-28 h-16 object-cover rounded-lg border transition-all ${isActive ? 'border-gold ring-2 ring-gold/50 shadow-lg' : 'border-gold/30 group-hover:border-gold'}`} loading="lazy" />
                 <div className="absolute bottom-1 right-1 bg-black/70 text-[10px] px-1 rounded text-gold">{percentage}%</div>
                 {isActive && <div className="absolute -top-2 left-1/2 transform -translate-x-1/2 bg-gold text-black text-[10px] px-1.5 py-0.5 rounded-full whitespace-nowrap">الحالي</div>}
               </div>
-              <span className={`text-[10px] transition-colors ${isActive ? 'text-gold font-medium' : 'text-white/70 group-hover:text-gold'}`}>{formatTime(time)}</span>
+              <span className={`text-[10px] ${isActive ? 'text-gold font-medium' : 'text-white/70 group-hover:text-gold'}`}>{formatTime(time)}</span>
             </button>
           );
         })}
@@ -223,38 +209,22 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   );
 }
 
-// ------------------- المكون الرئيسي -------------------
-export function MediaRenderer({ url, alt = "", aspectRatio = "16/9" }: { url?: string; alt?: string; aspectRatio?: string }) {
+// ------------------- المكون الرئيسي المرن -------------------
+export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string }) {
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [playerReady, setPlayerReady] = useState(false);
+  const [videoAspectRatio, setVideoAspectRatio] = useState<number | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<Plyr | null>(null);
-  const [containerAspectRatio, setContainerAspectRatio] = useState<string>(aspectRatio);
 
-  // محاولة استخراج نسبة العرض إلى الارتفاع من فيديو مباشر (اختياري)
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !videoSrc) return;
-    if (videoSrc.includes('.mp4') || videoSrc.includes('.webm') || videoSrc.includes('.mov')) {
-      const handleLoadedMetadata = () => {
-        const width = video.videoWidth;
-        const height = video.videoHeight;
-        if (width && height) {
-          const ratio = (width / height).toFixed(2);
-          setContainerAspectRatio(`${width} / ${height}`);
-        }
-      };
-      video.addEventListener('loadedmetadata', handleLoadedMetadata);
-      return () => video.removeEventListener('loadedmetadata', handleLoadedMetadata);
-    }
-  }, [videoSrc]);
-
+  // استخراج مصدر الفيديو
   useEffect(() => {
     setVideoSrc(null);
     setError(false);
     setPlayerReady(false);
+    setVideoAspectRatio(null);
     if (!url) return;
 
     const ytId = getYouTubeId(url);
@@ -279,7 +249,7 @@ export function MediaRenderer({ url, alt = "", aspectRatio = "16/9" }: { url?: s
     if (isStreamTapeUrl(url)) {
       setLoading(true);
       getStreamTapeProxiedUrl(url)
-        .then(src => { if (src) setVideoSrc(src); else setError(true); })
+        .then(src => src ? setVideoSrc(src) : setError(true))
         .catch(() => setError(true))
         .finally(() => setLoading(false));
       return;
@@ -303,7 +273,24 @@ export function MediaRenderer({ url, alt = "", aspectRatio = "16/9" }: { url?: s
     setError(true);
   }, [url]);
 
-  // تهيئة Plyr فقط للمقاطع التي تأتي كـ source فيديو (وليست iframe)
+  // قراءة أبعاد الفيديو لحساب نسبة العرض إلى الارتفاع
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !videoSrc) return;
+    if (videoSrc.includes('youtube.com/embed') || videoSrc.includes('drive.google.com/file/d/')) return;
+
+    const updateAspectRatio = () => {
+      if (video.videoWidth && video.videoHeight) {
+        setVideoAspectRatio(video.videoWidth / video.videoHeight);
+      }
+    };
+
+    video.addEventListener('loadedmetadata', updateAspectRatio);
+    if (video.readyState >= 1) updateAspectRatio();
+    return () => video.removeEventListener('loadedmetadata', updateAspectRatio);
+  }, [videoSrc]);
+
+  // تهيئة Plyr
   useEffect(() => {
     if (!videoRef.current) return;
     if (!videoSrc) return;
@@ -325,62 +312,59 @@ export function MediaRenderer({ url, alt = "", aspectRatio = "16/9" }: { url?: s
       setPlayerReady(true);
     };
 
-    if (videoRef.current.readyState >= 1) {
-      initializePlayer();
-    } else {
-      videoRef.current.addEventListener('loadedmetadata', initializePlayer, { once: true });
-    }
+    if (videoRef.current.readyState >= 1) initializePlayer();
+    else videoRef.current.addEventListener('loadedmetadata', initializePlayer, { once: true });
 
-    return () => {
-      playerRef.current?.destroy();
-      playerRef.current = null;
-      setPlayerReady(false);
-    };
+    return () => { playerRef.current?.destroy(); playerRef.current = null; setPlayerReady(false); };
   }, [videoSrc]);
 
-  const handleSeek = (time: number) => {
-    if (videoRef.current) videoRef.current.currentTime = time;
-  };
+  const handleSeek = (time: number) => { if (videoRef.current) videoRef.current.currentTime = time; };
 
   if (loading) return <div className="p-8 text-center text-gold">جاري تجهيز الفيديو...</div>;
   if (error || !videoSrc) return <div className="p-8 text-center text-red-400">لا يمكن عرض المحتوى. <a href={url} target="_blank" rel="noopener noreferrer" className="underline">فتح الرابط ↗</a></div>;
 
-  // عرض iframe لـ YouTube أو Google Drive (نستخدم نسبة أبعاد قابلة للتخصيص)
+  // حالة iframe (YouTube أو Google Drive)
   if (videoSrc.includes('youtube.com/embed') || videoSrc.includes('drive.google.com/file/d/')) {
     return (
-      <div 
-        className="relative w-full rounded-lg border border-gold/20"
-        style={{ aspectRatio: containerAspectRatio }}
-      >
-        <iframe
-          src={videoSrc}
-          className="absolute inset-0 w-full h-full"
-          allowFullScreen
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-        />
+      <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
+        <div className="relative w-full" style={{ aspectRatio: '16/9', maxHeight: '80vh' }}>
+          <iframe
+            src={videoSrc}
+            className="absolute inset-0 w-full h-full"
+            allowFullScreen
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          />
+        </div>
       </div>
     );
   }
 
-  // عرض الصور
+  // حالة الصور
   if (/\.(jpg|jpeg|png|gif|webp|avif)/i.test(videoSrc)) {
-    return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/20 object-contain" />;
+    return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/20" />;
   }
 
-  // عرض الفيديو العادي مع Plyr وشريط المشاهد
+  // حالة الفيديو المباشر (mp4, webm...) مع مرونة تامة
+  const containerStyle: React.CSSProperties = {
+    width: '100%',
+    maxHeight: '80vh',
+    ...(videoAspectRatio && { aspectRatio: videoAspectRatio }),
+  };
+
   return (
-    <div className="w-full rounded-lg border border-gold/20 bg-black">
-      <video
-        ref={videoRef}
-        className="plyr-react plyr w-full rounded-lg object-contain"
-        playsInline
-        crossOrigin="anonymous"
-        preload="metadata"
-        style={{ aspectRatio: containerAspectRatio }}
-      >
-        <source src={videoSrc} type="video/mp4" />
-        متصفحك لا يدعم تشغيل الفيديو.
-      </video>
+    <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
+      <div style={containerStyle} className="mx-auto">
+        <video
+          ref={videoRef}
+          className="w-full h-full object-contain"
+          playsInline
+          crossOrigin="anonymous"
+          preload="metadata"
+        >
+          <source src={videoSrc} type="video/mp4" />
+          متصفحك لا يدعم تشغيل الفيديو.
+        </video>
+      </div>
       {playerReady && (
         <ThumbnailStrip
           videoElement={videoRef.current}
