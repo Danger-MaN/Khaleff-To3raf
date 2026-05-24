@@ -32,7 +32,7 @@ function isGoogleDriveUrl(url: string): boolean {
   return /drive\.google\.com\/(file\/d\/|open\?id=)/i.test(url);
 }
 
-// استخراج رابط مباشر (mp4) من Google Drive
+// استخراج رابط مباشر قابل للتشغيل من Google Drive باستخدام خدمة gdurl
 function getGoogleDriveDirectUrl(url: string): string | null {
   let fileId: string | null = null;
   const matchFile = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
@@ -43,7 +43,8 @@ function getGoogleDriveDirectUrl(url: string): string | null {
     if (matchOpen) fileId = matchOpen[1];
   }
   if (!fileId) return null;
-  return `https://drive.google.com/uc?export=download&id=${fileId}`;
+  // استخدام خدمة gdurl المجانية لتحويل الرابط إلى رابط تشغيل مباشر
+  return `https://gdurl.com/${fileId}`;
 }
 
 async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null> {
@@ -236,7 +237,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
       return;
     }
 
-    // معالجة Google Drive كفيديو مباشر داخل Plyr
+    // معالجة Google Drive كفيديو مباشر داخل Plyr باستخدام gdurl
     if (isGoogleDriveUrl(url)) {
       const directUrl = getGoogleDriveDirectUrl(url);
       if (directUrl) {
@@ -275,7 +276,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
     setError(true);
   }, [url]);
 
-  // تهيئة Plyr للفيديو المباشر فقط (وليس YouTube)
+  // تهيئة Plyr للفيديو المباشر فقط (ليس YouTube)
   useEffect(() => {
     if (!videoRef.current) return;
     if (!videoSrc) return;
