@@ -38,9 +38,7 @@ function getGoogleDriveEmbedUrl(url: string): string | null {
     fileId = matchFile[1];
   } else {
     const matchOpen = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-    if (matchOpen) {
-      fileId = matchOpen[1];
-    }
+    if (matchOpen) fileId = matchOpen[1];
   }
   if (!fileId) return null;
   return `https://drive.google.com/file/d/${fileId}/preview`;
@@ -58,14 +56,14 @@ async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null>
   }
 }
 
-// ------------------- مكون عرض اللقطات -------------------
+// ------------------- مكون عرض اللقطات (بدون تغيير) -------------------
 interface ThumbnailStripProps {
   videoElement: HTMLVideoElement | null;
   onSeek: (time: number) => void;
   isVisible?: boolean;
 }
 
-const SEEK_INTERVAL_MS = 1250;
+const SEEK_INTERVAL_MS = 3000; // 3 ثوانٍ
 const THUMBNAIL_COUNT = 10;
 
 function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStripProps) {
@@ -74,7 +72,7 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   const [loading, setLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
-  
+
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const isPlayingRef = useRef(isPlaying);
   const activeIndexRef = useRef(activeIndex);
@@ -207,7 +205,7 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   );
 }
 
-// ------------------- المكون الرئيسي (النسخة النهائية الموثوقة) -------------------
+// ------------------- المكون الرئيسي (النسخة النهائية المتكاملة) -------------------
 export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string }) {
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -269,7 +267,7 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     setError(true);
   }, [url]);
 
-  // تهيئة Plyr
+  // تهيئة Plyr فقط للفيديو المباشر (ليس iframe)
   useEffect(() => {
     if (!videoRef.current) return;
     if (!videoSrc) return;
@@ -283,7 +281,6 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
         controls: ["play-large", "play", "progress", "current-time", "duration", "mute", "captions", "settings", "pip", "airplay", "fullscreen"],
         disableContextMenu: true,
         seekTime: 10,
-        quality: { default: 720, options: [1080, 720, 480, 360], forced: true },
         speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
         download: false,
         storage: { enabled: true, key: 'plyr' },
@@ -297,12 +294,14 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     return () => { playerRef.current?.destroy(); playerRef.current = null; setPlayerReady(false); };
   }, [videoSrc]);
 
-  const handleSeek = (time: number) => { if (videoRef.current) videoRef.current.currentTime = time; };
+  const handleSeek = (time: number) => {
+    if (videoRef.current) videoRef.current.currentTime = time;
+  };
 
   if (loading) return <div className="p-8 text-center text-gold">جاري تجهيز الفيديو...</div>;
   if (error || !videoSrc) return <div className="p-8 text-center text-red-400">لا يمكن عرض المحتوى. <a href={url} target="_blank" rel="noopener noreferrer" className="underline">فتح الرابط ↗</a></div>;
 
-  // iframe (YouTube, Drive)
+  // iframe (YouTube, Google Drive)
   if (videoSrc.includes('youtube.com/embed') || videoSrc.includes('drive.google.com/file/d/')) {
     return (
       <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
@@ -323,14 +322,17 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/20" />;
   }
 
-  // الفيديو المباشر - الحل السحري: fit-content و auto dimensions
+  // الفيديو المباشر - يدعم أي نسبة أبعاد (بما في ذلك الريلز الطولية)
   return (
     <div className="w-full bg-black overflow-hidden rounded-lg">
-      {/* توسيط الفيديو وحاوية تنكمش لحجمه */}
-      <div className="flex justify-center">
+      <div className="flex justify-center items-center min-h-[200px] p-2">
         <div
           className="rounded-lg overflow-hidden border border-gold/20"
-          style={{ width: 'fit-content', maxWidth: '100%' }}
+          style={{
+            width: 'fit-content',
+            maxWidth: '100%',
+            maxHeight: '90vh',
+          }}
         >
           <video
             ref={videoRef}
@@ -341,7 +343,6 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
               maxWidth: '100%',
               maxHeight: '90vh',
               objectFit: 'contain',
-              margin: '0 auto',
             }}
             playsInline
             crossOrigin="anonymous"
