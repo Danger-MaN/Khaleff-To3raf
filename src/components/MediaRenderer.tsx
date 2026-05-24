@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import Plyr from "plyr";
 import "plyr/dist/plyr.css";
+import ReactPlayer from "react-player";
 import type { VideoAspect } from "@/lib/articles";
 
 // ------------------- دوال مساعدة -------------------
@@ -230,7 +231,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
 
     const ytId = getYouTubeId(url);
     if (ytId) {
-      setVideoSrc(`https://www.youtube.com/embed/${ytId}`);
+      setVideoSrc(url);
       setPlayerReady(true);
       return;
     }
@@ -274,13 +275,11 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
     setError(true);
   }, [url]);
 
-  // تهيئة Plyr للفيديو المباشر فقط (وليس لفيديوهات الـ Portrait/Reels)
+  // تهيئة Plyr فقط للفيديو المباشر غير الطولي
   useEffect(() => {
     if (!videoRef.current) return;
     if (!videoSrc) return;
-    if (videoSrc.includes('youtube.com/embed') || videoSrc.includes('drive.google.com/file/d/')) return;
-    
-    // إذا كان الفيديو في وضع portrait (Reels)، لا نستخدم Plyr
+    if (videoSrc.includes('youtube.com') || videoSrc.includes('drive.google.com')) return;
     if (videoAspect === "portrait") return;
 
     if (playerRef.current) playerRef.current.destroy();
@@ -311,23 +310,28 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
   if (loading) return <div className="p-8 text-center text-gold">جاري تجهيز الفيديو...</div>;
   if (error || !videoSrc) return <div className="p-8 text-center text-red-400">لا يمكن عرض المحتوى. <a href={url} target="_blank" rel="noopener noreferrer" className="underline">فتح الرابط ↗</a></div>;
 
-  // YouTube (iframe)
-  if (videoSrc.includes('youtube.com/embed')) {
+  // ---------- YouTube (باستخدام ReactPlayer) ----------
+  if (videoSrc.includes('youtube.com/watch') || videoSrc.includes('youtu.be')) {
+    let playerWidth = '100%';
+    let playerHeight = 'auto';
+    if (videoAspect === "portrait") {
+      playerWidth = 'auto';
+      playerHeight = '80vh';
+    }
     return (
-      <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
-        <div className="relative w-full" style={{ aspectRatio: '16/9' }}>
-          <iframe
-            src={videoSrc}
-            className="absolute inset-0 w-full h-full"
-            allowFullScreen
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-          />
-        </div>
+      <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden flex justify-center">
+        <ReactPlayer
+          url={videoSrc}
+          width={playerWidth}
+          height={playerHeight}
+          controls={true}
+          config={{ youtube: { playerVars: { modestbranding: 1, rel: 0 } } }}
+        />
       </div>
     );
   }
 
-  // Google Drive (iframe) مع دعم videoAspect - بدون زر خارجي
+  // ---------- Google Drive (iframe) مع دعم videoAspect ----------
   if (videoSrc.includes('drive.google.com/file/d/')) {
     let containerStyle: React.CSSProperties = { width: '100%', height: 'auto' };
     if (videoAspect === "portrait") {
@@ -349,39 +353,71 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
     );
   }
 
-  // الصور
+  // ---------- الصور ----------
   if (/\.(jpg|jpeg|png|gif|webp|avif)/i.test(videoSrc)) {
     return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/20" />;
   }
 
   // ---------- الفيديو المباشر ----------
-  // إذا كان portrait (Reels)، نستخدم <video> العادي مع controls لتجنب تداخل Plyr
   const isPortrait = videoAspect === "portrait";
-  const videoStyle: React.CSSProperties = {
-    maxWidth: '100%',
-    maxHeight: '80vh',
-    width: 'auto',
-    height: 'auto',
-    display: 'block',
-    margin: '0 auto',
-  };
+  const isLandscape = videoAspect === "landscape";
 
-  return (
-    <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
-      <div className="flex justify-center items-center">
+  if (isPortrait) {
+    // فيديو طويل (Reels) - نستخدم ReactPlayer للحصول على واجهة نظيفة
+    return (
+      <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden flex justify-center">
+        <ReactPlayer
+          url={videoSrc}
+          width="auto"
+          height="80vh"
+          controls={true}
+          playing={false}
+        />
+      </div>
+    );
+  }
+
+  if (isLandscape) {
+    // فيديو عرضي - نستخدم Plyr
+    return (
+      <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
         <video
           ref={videoRef}
-          style={videoStyle}
-          controls={isPortrait} // في وضع portrait نستخدم controls العادية
+          style={{ width: '100%', height: 'auto', display: 'block' }}
           playsInline
           crossOrigin="anonymous"
           preload="metadata"
         >
           <source src={videoSrc} type="video/mp4" />
-          متصفحك لا يدعم تشغيل الفيديو.
+        </video>
+        {playerReady && (
+          <div className="mt-2">
+            <ThumbnailStrip
+              videoElement={videoRef.current}
+              onSeek={handleSeek}
+              isVisible={true}
+            />
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // auto - نستخدم Plyr مع أبعاد مرنة
+  return (
+    <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
+      <div className="flex justify-center">
+        <video
+          ref={videoRef}
+          style={{ maxWidth: '100%', maxHeight: '80vh', width: 'auto', height: 'auto', display: 'block' }}
+          playsInline
+          crossOrigin="anonymous"
+          preload="metadata"
+        >
+          <source src={videoSrc} type="video/mp4" />
         </video>
       </div>
-      {!isPortrait && playerReady && (
+      {playerReady && (
         <div className="mt-2">
           <ThumbnailStrip
             videoElement={videoRef.current}
