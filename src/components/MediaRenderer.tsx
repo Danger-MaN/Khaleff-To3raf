@@ -59,6 +59,7 @@ async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null>
 }
 
 // ------------------- مكون عرض اللقطات (ThumbnailStrip) -------------------
+// (نفس الكود السابق دون تغيير - اختصاراً)
 interface ThumbnailStripProps {
   videoElement: HTMLVideoElement | null;
   onSeek: (time: number) => void;
@@ -273,7 +274,7 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     setError(true);
   }, [url]);
 
-  // تحديد إذا كان الفيديو طويلاً (نسبة الارتفاع إلى العرض > 1.2 مثلاً)
+  // تحديد إذا كان الفيديو طويلاً (نسبة الارتفاع إلى العرض > 1.2)
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !videoSrc) return;
@@ -322,7 +323,7 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
   if (loading) return <div className="p-8 text-center text-gold">جاري تجهيز الفيديو...</div>;
   if (error || !videoSrc) return <div className="p-8 text-center text-red-400">لا يمكن عرض المحتوى. <a href={url} target="_blank" rel="noopener noreferrer" className="underline">فتح الرابط ↗</a></div>;
 
-  // حالة iframe (YouTube أو Google Drive) - نعطيه نسبة 16/9
+  // حالة iframe (YouTube أو Google Drive)
   if (videoSrc.includes('youtube.com/embed') || videoSrc.includes('drive.google.com/file/d/')) {
     return (
       <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
@@ -343,20 +344,18 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/20" />;
   }
 
-  // حالة الفيديو المباشر - مع دعم خاص للفيديوهات الطويلة (الريلز)
+  // حالة الفيديو المباشر
+  // إذا كان الفيديو عمودياً، نجعل الحاوية تنكمش إلى عرض الفيديو باستخدام inline-flex
+  // وإلا نعرضها بعرض كامل
   return (
-    <div className="w-full rounded-lg bg-black overflow-hidden">
+    <div className="w-full bg-black overflow-hidden rounded-lg">
       <div className="flex justify-center">
         <div
-          className="relative"
+          className="relative rounded-lg overflow-hidden border border-gold/20"
           style={{
-            maxWidth: '100%',
+            display: isPortrait ? 'inline-block' : 'block',
             width: isPortrait ? 'auto' : '100%',
-            height: isPortrait ? 'auto' : 'auto',
-            maxHeight: isPortrait ? '90vh' : 'none',
-            borderRadius: '0.5rem',
-            overflow: 'hidden',
-            border: '1px solid rgba(255, 215, 0, 0.2)',
+            maxWidth: '100%',
           }}
         >
           <video
@@ -364,12 +363,10 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
             className="block"
             style={{
               width: isPortrait ? 'auto' : '100%',
-              height: isPortrait ? '90vh' : 'auto',
+              height: isPortrait ? '80vh' : 'auto',
               maxWidth: '100%',
-              maxHeight: '90vh',
+              maxHeight: '80vh',
               objectFit: 'contain',
-              display: 'block',
-              margin: '0 auto',
             }}
             playsInline
             crossOrigin="anonymous"
