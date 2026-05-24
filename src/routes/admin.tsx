@@ -32,7 +32,8 @@ function isGoogleDriveUrl(url: string): boolean {
   return /drive\.google\.com\/(file\/d\/|open\?id=)/i.test(url);
 }
 
-function getGoogleDriveEmbedUrl(url: string): string | null {
+// استخراج رابط مباشر mp4 من Google Drive
+function getGoogleDriveDirectUrl(url: string): string | null {
   let fileId: string | null = null;
   const matchFile = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
   if (matchFile) {
@@ -42,7 +43,8 @@ function getGoogleDriveEmbedUrl(url: string): string | null {
     if (matchOpen) fileId = matchOpen[1];
   }
   if (!fileId) return null;
-  return `https://drive.google.com/file/d/${fileId}/preview`;
+  // رابط التنزيل المباشر (يُمكن استخدامه في عنصر video)
+  return `https://drive.google.com/uc?export=download&id=${fileId}`;
 }
 
 async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null> {
@@ -54,32 +56,6 @@ async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null>
   } catch (err) {
     console.error("getStreamTapeProxiedUrl error:", err);
     return null;
-  }
-}
-
-// دالة للحصول على نمط الحاوية بناءً على videoAspect
-function getContainerStyle(videoAspect: VideoAspect): React.CSSProperties {
-  switch (videoAspect) {
-    case "landscape":
-      return { 
-        aspectRatio: "16 / 9", 
-        maxWidth: "100%",
-        width: "100%",
-      };
-    case "portrait":
-      return { 
-        aspectRatio: "9 / 16", 
-        maxHeight: "80vh", 
-        width: "auto",
-        maxWidth: "100%",
-      };
-    case "auto":
-    default:
-      return { 
-        display: "flex", 
-        justifyContent: "center",
-        alignItems: "center",
-      };
   }
 }
 
@@ -244,32 +220,28 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [playerReady, setPlayerReady] = useState(false);
-  const [contentType, setContentType] = useState<"youtube" | "googledrive" | "video" | "image" | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<Plyr | null>(null);
 
-  // تحديد مصدر المحتوى ونوعه
+  // تحديد مصدر المحتوى
   useEffect(() => {
     setVideoSrc(null);
     setError(false);
     setPlayerReady(false);
-    setContentType(null);
     if (!url) return;
 
     const ytId = getYouTubeId(url);
     if (ytId) {
       setVideoSrc(`https://www.youtube.com/embed/${ytId}`);
-      setContentType("youtube");
       setPlayerReady(true);
       return;
     }
 
+    // معالجة Google Drive كفيديو مباشر
     if (isGoogleDriveUrl(url)) {
-      const embedUrl = getGoogleDriveEmbedUrl(url);
-      if (embedUrl) {
-        setVideoSrc(embedUrl);
-        setContentType("googledrive");
-        setPlayerReady(true);
+      const directUrl = getGoogleDriveDirectUrl(url);
+      if (directUrl) {
+        setVideoSrc(directUrl);
         return;
       } else {
         setError(true);
@@ -280,12 +252,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
     if (isStreamTapeUrl(url)) {
       setLoading(true);
       getStreamTapeProxiedUrl(url)
-        .then(src => {
-          if (src) {
-            setVideoSrc(src);
-            setContentType("video");
-          } else setError(true);
-        })
+        .then(src => src ? setVideoSrc(src) : setError(true))
         .catch(() => setError(true))
         .finally(() => setLoading(false));
       return;
@@ -298,24 +265,22 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
 
     if (/\.(mp4|webm|mov|ogg)/i.test(url)) {
       setVideoSrc(url);
-      setContentType("video");
       return;
     }
 
     if (/\.(jpg|jpeg|png|gif|webp|avif)/i.test(url)) {
       setVideoSrc(url);
-      setContentType("image");
       return;
     }
 
     setError(true);
   }, [url]);
 
-  // تهيئة Plyr للفيديو المباشر فقط
+  // تهيئة Plyr للفيديو المباشر فقط (ليس YouTube)
   useEffect(() => {
     if (!videoRef.current) return;
     if (!videoSrc) return;
-    if (contentType !== "video") return;
+    if (videoSrc.includes('youtube.com/embed')) return; // YouTube يتم عرضه بـ iframe
 
     if (playerRef.current) playerRef.current.destroy();
 
@@ -336,7 +301,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
     else videoRef.current.addEventListener('loadedmetadata', initializePlayer, { once: true });
 
     return () => { playerRef.current?.destroy(); playerRef.current = null; setPlayerReady(false); };
-  }, [videoSrc, contentType]);
+  }, [videoSrc]);
 
   const handleSeek = (time: number) => {
     if (videoRef.current) videoRef.current.currentTime = time;
@@ -345,16 +310,14 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
   if (loading) return <div className="p-8 text-center text-gold">جاري تجهيز الفيديو...</div>;
   if (error || !videoSrc) return <div className="p-8 text-center text-red-400">لا يمكن عرض المحتوى. <a href={url} target="_blank" rel="noopener noreferrer" className="underline">فتح الرابط ↗</a></div>;
 
-  const containerStyle = getContainerStyle(videoAspect);
-
-  // YouTube أو Google Drive (iframe)
-  if (contentType === "youtube" || contentType === "googledrive") {
+  // YouTube فقط (iframe)
+  if (videoSrc.includes('youtube.com/embed')) {
     return (
-      <div className="w-full bg-black rounded-lg border border-gold/20 overflow-hidden flex justify-center">
-        <div style={containerStyle} className="overflow-hidden rounded-lg">
+      <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
+        <div className="relative w-full" style={{ aspectRatio: '16/9' }}>
           <iframe
             src={videoSrc}
-            style={{ width: "100%", height: "100%", border: "none" }}
+            className="absolute inset-0 w-full h-full"
             allowFullScreen
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           />
@@ -364,23 +327,33 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
   }
 
   // الصور
-  if (contentType === "image") {
-    return (
-      <div className="w-full bg-black rounded-lg border border-gold/20 overflow-hidden flex justify-center">
-        <div style={containerStyle}>
-          <img src={videoSrc} alt={alt} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
-        </div>
-      </div>
-    );
+  if (/\.(jpg|jpeg|png|gif|webp|avif)/i.test(videoSrc)) {
+    return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/20" />;
   }
 
-  // الفيديو المباشر (MP4, Streamtape, etc.)
+  // تحديد نمط الحاوية بناءً على videoAspect
+  let containerStyle: React.CSSProperties = { display: 'flex', justifyContent: 'center' };
+  let videoStyle: React.CSSProperties = { display: 'block', objectFit: 'contain', maxWidth: '100%', maxHeight: '80vh' };
+
+  if (videoAspect === "landscape") {
+    containerStyle = { aspectRatio: '16/9', maxWidth: '100%' };
+    videoStyle = { width: '100%', height: '100%', objectFit: 'contain' };
+  } else if (videoAspect === "portrait") {
+    containerStyle = { aspectRatio: '9/16', maxHeight: '80vh', width: 'auto', margin: '0 auto' };
+    videoStyle = { width: '100%', height: '100%', objectFit: 'contain' };
+  } else {
+    // auto: الحاوية تأخذ حجم الفيديو الأصلي
+    containerStyle = { display: 'flex', justifyContent: 'center' };
+    videoStyle = { display: 'block', width: 'auto', height: 'auto', maxWidth: '100%', maxHeight: '80vh', objectFit: 'contain' };
+  }
+
+  // الفيديو المباشر (بما في ذلك Drive الآن)
   return (
     <div className="w-full bg-black rounded-lg border border-gold/20 overflow-hidden">
-      <div style={containerStyle} className="flex justify-center items-center">
+      <div style={containerStyle} className="w-full">
         <video
           ref={videoRef}
-          style={{ width: "100%", height: "100%", objectFit: "contain" }}
+          style={videoStyle}
           playsInline
           crossOrigin="anonymous"
           preload="metadata"
