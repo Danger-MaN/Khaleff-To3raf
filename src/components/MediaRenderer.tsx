@@ -215,6 +215,7 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [playerReady, setPlayerReady] = useState(false);
+  const [videoDimensions, setVideoDimensions] = useState<{ width: number; height: number } | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<Plyr | null>(null);
 
@@ -223,6 +224,7 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     setVideoSrc(null);
     setError(false);
     setPlayerReady(false);
+    setVideoDimensions(null);
     if (!url) return;
 
     const ytId = getYouTubeId(url);
@@ -271,7 +273,23 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     setError(true);
   }, [url]);
 
-  // تهيئة Plyr للفيديو المباشر (غير iframe)
+  // استخراج أبعاد الفيديو الأصلي
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !videoSrc) return;
+    if (videoSrc.includes('youtube.com/embed') || videoSrc.includes('drive.google.com/file/d/')) return;
+
+    const updateDimensions = () => {
+      if (video.videoWidth && video.videoHeight) {
+        setVideoDimensions({ width: video.videoWidth, height: video.videoHeight });
+      }
+    };
+    video.addEventListener('loadedmetadata', updateDimensions);
+    if (video.readyState >= 1) updateDimensions();
+    return () => video.removeEventListener('loadedmetadata', updateDimensions);
+  }, [videoSrc]);
+
+  // تهيئة Plyr
   useEffect(() => {
     if (!videoRef.current) return;
     if (!videoSrc) return;
@@ -304,7 +322,7 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
   if (loading) return <div className="p-8 text-center text-gold">جاري تجهيز الفيديو...</div>;
   if (error || !videoSrc) return <div className="p-8 text-center text-red-400">لا يمكن عرض المحتوى. <a href={url} target="_blank" rel="noopener noreferrer" className="underline">فتح الرابط ↗</a></div>;
 
-  // حالة iframe (YouTube أو Google Drive) - نعطيه أقصى ارتفاع مناسب
+  // حالة iframe (YouTube أو Google Drive) - نعطيه نسبة 16/9 مع أقصى ارتفاع
   if (videoSrc.includes('youtube.com/embed') || videoSrc.includes('drive.google.com/file/d/')) {
     return (
       <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
@@ -325,29 +343,56 @@ export function MediaRenderer({ url, alt = "" }: { url?: string; alt?: string })
     return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/20" />;
   }
 
-  // حالة الفيديو المباشر (mp4, webm, mov, etc.) - مرن للريلز والفيديوهات الطويلة
+  // حالة الفيديو المباشر (mp4, webm, mov)
+  // نقوم بإنشاء حاوية تنكمش إلى حجم الفيديو (مع مراعاة الحد الأقصى للعرض)
+  const containerStyle: React.CSSProperties = {
+    display: 'flex',
+    justifyContent: 'center',
+    width: '100%',
+  };
+  
+  const videoWrapperStyle: React.CSSProperties = {
+    maxWidth: '100%',
+    width: videoDimensions ? 'auto' : '100%',
+    height: 'auto',
+    borderRadius: '0.5rem',
+    overflow: 'hidden',
+    border: '1px solid rgba(255, 215, 0, 0.2)',
+  };
+
+  const videoStyle: React.CSSProperties = {
+    display: 'block',
+    maxWidth: '100%',
+    maxHeight: '80vh',
+    width: 'auto',
+    height: 'auto',
+    margin: '0 auto',
+  };
+
   return (
-    <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
-      {/* حاوية الفيديو بدون فرض نسبة أبعاد، تسمح للفيديو بالتمدد حسب حجمه الأصلي */}
-      <div className="flex justify-center">
-        <video
-          ref={videoRef}
-          className="w-full h-auto max-h-[80vh] object-contain"
-          playsInline
-          crossOrigin="anonymous"
-          preload="metadata"
-          style={{ display: 'block' }}
-        >
-          <source src={videoSrc} type="video/mp4" />
-          متصفحك لا يدعم تشغيل الفيديو.
-        </video>
+    <div className="w-full rounded-lg bg-black overflow-hidden">
+      <div style={containerStyle}>
+        <div style={videoWrapperStyle}>
+          <video
+            ref={videoRef}
+            style={videoStyle}
+            playsInline
+            crossOrigin="anonymous"
+            preload="metadata"
+          >
+            <source src={videoSrc} type="video/mp4" />
+            متصفحك لا يدعم تشغيل الفيديو.
+          </video>
+        </div>
       </div>
       {playerReady && (
-        <ThumbnailStrip
-          videoElement={videoRef.current}
-          onSeek={handleSeek}
-          isVisible={true}
-        />
+        <div className="mt-2">
+          <ThumbnailStrip
+            videoElement={videoRef.current}
+            onSeek={handleSeek}
+            isVisible={true}
+          />
+        </div>
       )}
     </div>
   );
