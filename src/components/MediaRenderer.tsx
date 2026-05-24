@@ -35,9 +35,8 @@ function isGoogleDriveUrl(url: string): boolean {
 function getGoogleDriveEmbedUrl(url: string): string | null {
   let fileId: string | null = null;
   const matchFile = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
-  if (matchFile) {
-    fileId = matchFile[1];
-  } else {
+  if (matchFile) fileId = matchFile[1];
+  else {
     const matchOpen = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
     if (matchOpen) fileId = matchOpen[1];
   }
@@ -217,7 +216,6 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
-  const [playerReady, setPlayerReady] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<Plyr | null>(null);
 
@@ -225,26 +223,19 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
   useEffect(() => {
     setVideoSrc(null);
     setError(false);
-    setPlayerReady(false);
     if (!url) return;
 
     const ytId = getYouTubeId(url);
     if (ytId) {
       setVideoSrc(`https://www.youtube.com/embed/${ytId}`);
-      setPlayerReady(true);
       return;
     }
 
     if (isGoogleDriveUrl(url)) {
       const embedUrl = getGoogleDriveEmbedUrl(url);
-      if (embedUrl) {
-        setVideoSrc(embedUrl);
-        setPlayerReady(true);
-        return;
-      } else {
-        setError(true);
-        return;
-      }
+      if (embedUrl) setVideoSrc(embedUrl);
+      else setError(true);
+      return;
     }
 
     if (isStreamTapeUrl(url)) {
@@ -292,21 +283,16 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
         download: false,
         storage: { enabled: true, key: 'plyr' },
       });
-      setPlayerReady(true);
     };
 
     if (videoRef.current.readyState >= 1) initializePlayer();
     else videoRef.current.addEventListener('loadedmetadata', initializePlayer, { once: true });
 
-    return () => { playerRef.current?.destroy(); playerRef.current = null; setPlayerReady(false); };
+    return () => { playerRef.current?.destroy(); playerRef.current = null; };
   }, [videoSrc]);
 
-  const handleSeek = (time: number) => {
-    if (videoRef.current) videoRef.current.currentTime = time;
-  };
-
   if (loading) return <div className="p-8 text-center text-gold">جاري تجهيز الفيديو...</div>;
-  if (error || !videoSrc) return <div className="p-8 text-center text-red-400">لا يمكن عرض المحتوى. <a href={url} target="_blank" rel="noopener noreferrer" className="underline">فتح الرابط ↗</a></div>;
+  if (error || !videoSrc) return <div className="p-8 text-center text-red-400">لا يمكن عرض المحتوى.</div>;
 
   // YouTube (iframe)
   if (videoSrc.includes('youtube.com/embed')) {
@@ -351,37 +337,19 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
     return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/20" />;
   }
 
-  // ---------- الفيديو المباشر (Plyr) مع أسلوب بسيط لا يعكر صفو Plyr ----------
-  // نترك Plyr يأخذ المساحة الطبيعية، ونطبق فقط max-width و max-height على الحاوية
+  // الفيديو المباشر - Plyr يعمل بشكل طبيعي بدون أي تدخل
   return (
     <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
-      <div className="flex justify-center items-center" style={{ maxHeight: '80vh' }}>
-        <video
-          ref={videoRef}
-          style={{
-            maxWidth: '100%',
-            maxHeight: '80vh',
-            width: 'auto',
-            height: 'auto',
-            display: 'block',
-          }}
-          playsInline
-          crossOrigin="anonymous"
-          preload="metadata"
-        >
-          <source src={videoSrc} type="video/mp4" />
-          متصفحك لا يدعم تشغيل الفيديو.
-        </video>
-      </div>
-      {playerReady && (
-        <div className="mt-2">
-          <ThumbnailStrip
-            videoElement={videoRef.current}
-            onSeek={handleSeek}
-            isVisible={true}
-          />
-        </div>
-      )}
+      <video
+        ref={videoRef}
+        className="plyr-react plyr w-full"
+        playsInline
+        crossOrigin="anonymous"
+        preload="metadata"
+      >
+        <source src={videoSrc} type="video/mp4" />
+        متصفحك لا يدعم تشغيل الفيديو.
+      </video>
     </div>
   );
 }
