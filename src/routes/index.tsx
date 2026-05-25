@@ -69,6 +69,9 @@ function Home() {
           <h1 className="font-display text-6xl md:text-8xl leading-[0.95] mb-20 gradient-gold-text tracking-wide">
             {t("brand")}
           </h1>
+          <h1 className="font-display text-6xl md:text-8xl leading-[0.95] mb-20 text-gold">
+            {t("brand")}
+          </h1>
       
           <div className="divider-pharaoh my-12 max-w-md mx-auto" />
           <p className="mt-20 text-xl md:text-2xl text-foreground/90 font-display italic max-w-2xl mx-auto leading-snug">
