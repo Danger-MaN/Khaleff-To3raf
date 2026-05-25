@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import type { VideoAspect } from "@/lib/articles";
 
 // ------------------- دوال مساعدة -------------------
@@ -99,7 +99,10 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
   const [isIframe, setIsIframe] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
+  const [aspectRatio, setAspectRatio] = useState<number | null>(null); // لتخزين النسبة المستنتجة
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
+  // تحديد مصدر المحتوى
   useEffect(() => {
     let mounted = true;
     const load = async () => {
@@ -173,31 +176,61 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
     return () => { mounted = false; };
   }, [url]);
 
+  // استنتاج نسبة الأبعاد للـ iframe
+  useEffect(() => {
+    if (!isIframe || !iframeRef.current) return;
+
+    const handleLoad = () => {
+      try {
+        // محاولة قراءة نسبة الأبعاد من خصائص iframe أو محتواه
+        const iframe = iframeRef.current;
+        if (iframe && iframe.contentWindow && iframe.contentWindow.document) {
+          const videoElement = iframe.contentWindow.document.querySelector('video');
+          if (videoElement && videoElement.videoWidth && videoElement.videoHeight) {
+            const ratio = videoElement.videoWidth / videoElement.videoHeight;
+            setAspectRatio(ratio);
+            console.log(`Detected aspect ratio: ${ratio}`);
+          }
+        }
+      } catch (error) {
+        // تجاهل أخطاء CORS
+        console.log("Cannot access iframe content due to CORS policy.");
+      }
+    };
+
+    if (iframeRef.current.complete) {
+      handleLoad();
+    } else {
+      iframeRef.current.addEventListener('load', handleLoad);
+      return () => iframeRef.current?.removeEventListener('load', handleLoad);
+    }
+  }, [isIframe, finalSrc]);
+
   if (loading) return <div className="p-8 text-center text-gold">جاري التحميل...</div>;
   if (error || !finalSrc) return <div className="p-8 text-center text-red-400">لا يمكن عرض المحتوى. <a href={url} target="_blank" rel="noopener noreferrer">فتح الرابط ↗</a></div>;
 
   // --- iframe (YouTube, Facebook, Google Drive) ---
   if (isIframe) {
     let containerStyle: React.CSSProperties = {};
-    let iframeStyle: React.CSSProperties = { width: '100%', height: '100%', border: 0 };
+    let effectiveAspectRatio = aspectRatio;
 
-    if (videoAspect === "landscape") {
-      containerStyle = { aspectRatio: '16/9' };
-    } else if (videoAspect === "portrait") {
-      // في حالة الفيديوهات الطويلة (مثل ريلز فيسبوك)
-      containerStyle = { aspectRatio: '9/16', maxHeight: '80vh', margin: '0 auto' };
-      iframeStyle = { width: '100%', height: '100%', border: 0, objectFit: 'cover' }; // املأ المساحة السوداء
-    } else {
-      // auto
-      containerStyle = { width: '100%', height: 'auto', minHeight: '300px' };
+    // إذا لم نتمكن من استنتاج النسبة، نستخدم نسبة معينة بناءً على الإعداد المختار
+    if (!effectiveAspectRatio) {
+      if (videoAspect === "landscape") effectiveAspectRatio = 16 / 9;
+      else if (videoAspect === "portrait") effectiveAspectRatio = 9 / 16;
+      else effectiveAspectRatio = 16 / 9; // نسبة افتراضية للحالة auto
     }
+
+    // تطبيق نسبة الأبعاد المستنتجة
+    containerStyle = { position: 'relative', width: '100%', paddingBottom: `${(1 / effectiveAspectRatio) * 100}%` };
 
     return (
       <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
-        <div style={containerStyle} className="relative w-full">
+        <div style={containerStyle}>
           <iframe
+            ref={iframeRef}
             src={finalSrc}
-            style={iframeStyle}
+            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 0 }}
             allowFullScreen
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           />
