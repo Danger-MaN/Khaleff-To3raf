@@ -4,7 +4,6 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import Plyr from "plyr";
 import "plyr/dist/plyr.css";
 import type { VideoAspect } from "@/lib/articles";
-import { Play } from "lucide-react";
 
 // ------------------- دوال مساعدة -------------------
 function getYouTubeId(url: string): string | null {
@@ -33,6 +32,7 @@ function isGoogleDriveUrl(url: string): boolean {
   return /drive\.google\.com\/(file\/d\/|open\?id=)/i.test(url);
 }
 
+// استخراج معرف الملف من رابط Google Drive
 function getGoogleDriveFileId(url: string): string | null {
   const matchFile = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
   if (matchFile) return matchFile[1];
@@ -41,10 +41,13 @@ function getGoogleDriveFileId(url: string): string | null {
   return null;
 }
 
+// رابط iframe لـ Google Drive مع إخفاء جميع الأيقونات
 function getGoogleDriveEmbedUrl(url: string): string | null {
   const fileId = getGoogleDriveFileId(url);
   if (!fileId) return null;
-  return `https://drive.google.com/file/d/${fileId}/preview`;
+  // controls=0 يخفي شريط التحكم بالكامل
+  // disablekb=1 يعطل اختصارات لوحة المفاتيح
+  return `https://drive.google.com/file/d/${fileId}/preview?controls=0&disablekb=1`;
 }
 
 async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null> {
@@ -208,53 +211,6 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   );
 }
 
-// ------------------- مكون Google Drive المخصص (بدون أي أزرار) -------------------
-function GoogleDriveEmbed({ fileId, videoAspect }: { fileId: string; videoAspect: VideoAspect }) {
-  const [iframeLoaded, setIframeLoaded] = useState(false);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-
-  let containerStyle: React.CSSProperties = {};
-  if (videoAspect === "landscape") {
-    containerStyle = { aspectRatio: '16/9' };
-  } else if (videoAspect === "portrait") {
-    containerStyle = { aspectRatio: '9/16', maxHeight: '80vh', margin: '0 auto' };
-  } else {
-    containerStyle = { width: '100%', height: 'auto', minHeight: '300px' };
-  }
-
-  // تشغيل الفيديو عند النقر على الطبقة الشفافة
-  const handlePlayClick = () => {
-    if (iframeRef.current) {
-      // محاولة تشغيل الفيديو عبر iframe (ليس دائماً يعمل بسبب CORS)
-      iframeRef.current.src = `https://drive.google.com/file/d/${fileId}/preview?autoplay=1`;
-    }
-  };
-
-  return (
-    <div style={containerStyle} className="relative w-full bg-black overflow-hidden rounded-lg">
-      <iframe
-        ref={iframeRef}
-        src={`https://drive.google.com/file/d/${fileId}/preview`}
-        className="w-full h-full border-0 pointer-events-none"
-        allowFullScreen
-        allow="autoplay; encrypted-media"
-        onLoad={() => setIframeLoaded(true)}
-      />
-      {/* طبقة شفافة فوق iframe لمنع النقر على أزرار Drive */}
-      <div 
-        className="absolute inset-0 cursor-pointer bg-transparent z-10 flex items-center justify-center"
-        onClick={handlePlayClick}
-      >
-        {!iframeLoaded && (
-          <div className="w-16 h-16 rounded-full bg-gold/80 flex items-center justify-center hover:scale-110 transition">
-            <Play className="w-8 h-8 text-black" />
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // ------------------- المكون الرئيسي -------------------
 interface MediaRendererProps {
   url?: string;
@@ -267,7 +223,6 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [playerReady, setPlayerReady] = useState(false);
-  const [driveFileId, setDriveFileId] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<Plyr | null>(null);
 
@@ -278,7 +233,6 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
       setVideoSrc(null);
       setError(false);
       setPlayerReady(false);
-      setDriveFileId(null);
       if (!url) return;
 
       // 1. YouTube (iframe)
@@ -289,11 +243,11 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
         return;
       }
 
-      // 2. Google Drive -> معاملة خاصة
+      // 2. Google Drive -> iframe مع إخفاء الأيقونات
       if (isGoogleDriveUrl(url)) {
-        const fileId = getGoogleDriveFileId(url);
-        if (fileId) {
-          setDriveFileId(fileId);
+        const embedUrl = getGoogleDriveEmbedUrl(url);
+        if (embedUrl) {
+          setVideoSrc(embedUrl);
           setPlayerReady(true);
           return;
         } else {
@@ -340,11 +294,11 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
   }, [url]);
 
   // تهيئة Plyr فقط للفيديو المباشر (StreamTape، MP4)
+  // لا يتم تطبيقه على YouTube أو Drive (لأنهما iframe)
   useEffect(() => {
     if (!videoRef.current) return;
     if (!videoSrc) return;
-    if (videoSrc.includes('youtube.com/embed')) return;
-    if (driveFileId) return; // Drive له معالجة خاصة
+    if (videoSrc.includes('youtube.com/embed') || videoSrc.includes('drive.google.com/file/d/')) return;
 
     if (playerRef.current) playerRef.current.destroy();
 
@@ -370,7 +324,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
     else videoRef.current.addEventListener('loadedmetadata', initializePlayer, { once: true });
 
     return () => { playerRef.current?.destroy(); playerRef.current = null; setPlayerReady(false); };
-  }, [videoSrc, videoAspect, driveFileId]);
+  }, [videoSrc, videoAspect]);
 
   const handleSeek = (time: number) => {
     if (videoRef.current) videoRef.current.currentTime = time;
@@ -378,23 +332,20 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
 
   // حالات التحميل والخطأ
   if (loading) return <div className="p-8 text-center text-gold">جاري تجهيز الفيديو...</div>;
-  if (error || (!videoSrc && !driveFileId)) return <div className="p-8 text-center text-red-400">لا يمكن عرض المحتوى. <a href={url} target="_blank" rel="noopener noreferrer" className="underline">فتح الرابط ↗</a></div>;
+  if (error || !videoSrc) return <div className="p-8 text-center text-red-400">لا يمكن عرض المحتوى. <a href={url} target="_blank" rel="noopener noreferrer" className="underline">فتح الرابط ↗</a></div>;
 
-  // Google Drive (مخصص بدون أزرار)
-  if (driveFileId) {
-    return (
-      <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
-        <GoogleDriveEmbed fileId={driveFileId} videoAspect={videoAspect} />
-      </div>
-    );
-  }
-
-  // YouTube (iframe)
-  if (videoSrc?.includes('youtube.com/embed')) {
+  // YouTube أو Google Drive (iframe) - يعاملان بنفس الطريقة
+  if (videoSrc.includes('youtube.com/embed') || videoSrc.includes('drive.google.com/file/d/')) {
     let containerStyle: React.CSSProperties = {};
-    if (videoAspect === "landscape") containerStyle = { aspectRatio: '16/9' };
-    else if (videoAspect === "portrait") containerStyle = { aspectRatio: '9/16', maxHeight: '80vh', margin: '0 auto' };
-    else containerStyle = { width: '100%', height: 'auto', minHeight: '300px' };
+    
+    if (videoAspect === "landscape") {
+      containerStyle = { aspectRatio: '16/9' };
+    } else if (videoAspect === "portrait") {
+      containerStyle = { aspectRatio: '9/16', maxHeight: '80vh', margin: '0 auto' };
+    } else {
+      // auto
+      containerStyle = { width: '100%', height: 'auto', minHeight: '300px' };
+    }
 
     return (
       <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
@@ -411,11 +362,11 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
   }
 
   // الصور
-  if (videoSrc && /\.(jpg|jpeg|png|gif|webp|avif)/i.test(videoSrc)) {
+  if (/\.(jpg|jpeg|png|gif|webp|avif)/i.test(videoSrc)) {
     return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/20" />;
   }
 
-  // الفيديو المباشر (StreamTape، MP4) مع Plyr
+  // الفيديو المباشر (StreamTape، MP4) مع Plyr وأزرار متناسقة
   const isPortrait = videoAspect === "portrait";
   let containerStyle: React.CSSProperties = { display: 'flex', justifyContent: 'center' };
   let videoStyle: React.CSSProperties = { display: 'block', objectFit: 'contain', maxWidth: '100%', maxHeight: '80vh' };
