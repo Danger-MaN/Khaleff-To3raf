@@ -36,6 +36,41 @@ function isFacebookVideoUrl(url: string): boolean {
   return /(facebook\.com.*\/videos\/|fb\.watch\/|facebook\.com\/watch\/\?v=)/i.test(url);
 }
 
+// ------------------- دوال Twitter (X) -------------------
+function isTwitterVideoUrl(url: string): boolean {
+  return /(twitter\.com|x\.com)\/(?:#!\/)?(\w+)\/status(?:es)?\/(\d+)/i.test(url);
+}
+
+function getTwitterEmbedUrl(url: string): string | null {
+  const match = url.match(/(?:twitter\.com|x\.com)\/(?:#!\/)?(\w+)\/status(?:es)?\/(\d+)/i);
+  if (match) {
+    const tweetId = match[2];
+    return `https://platform.twitter.com/widgets/tweet.html?dnt=true&embedId=twitter-widget-${tweetId}&frame=false&hideCard=false&hideThread=false&id=${tweetId}&lang=en&theme=dark&widgetsVersion=ed20a2b%3A1601588405575`;
+  }
+  return null;
+}
+
+// ------------------- دوال TikTok -------------------
+function isTikTokUrl(url: string): boolean {
+  return /(tiktok\.com\/@[\w.-]+\/video\/\d+|tiktok\.com\/t\/[\w]+)/i.test(url);
+}
+
+async function getTikTokEmbedUrl(url: string): Promise<string | null> {
+  try {
+    const oembedUrl = `https://www.tiktok.com/oembed?url=${encodeURIComponent(url)}`;
+    const response = await fetch(oembedUrl);
+    const data = await response.json();
+    if (data.html) {
+      const srcMatch = data.html.match(/src="([^"]+)"/);
+      if (srcMatch) return srcMatch[1];
+    }
+    return null;
+  } catch (error) {
+    console.error("TikTok embed error:", error);
+    return null;
+  }
+}
+
 function getFacebookEmbedUrl(url: string): string | null {
   try {
     const videoMatch = url.match(/facebook\.com\/(?:[^\/]+\/)?videos\/(?:[^\/]+\/)?(\d+)/i);
@@ -298,6 +333,73 @@ function FacebookIframe({ embedUrl, videoAspect, isPreview = false }: { embedUrl
   );
 }
 
+// ------------------- مكون Twitter iframe -------------------
+function TwitterIframe({ tweetId, videoAspect, isPreview = false }: { tweetId: string; videoAspect: VideoAspect; isPreview?: boolean }) {
+  if (isPreview) {
+    return (
+      <div className="w-full h-full bg-black flex items-center justify-center">
+        <div className="w-12 h-12 rounded-full bg-gold/80 flex items-center justify-center pointer-events-none">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white">
+            <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+          </svg>
+        </div>
+      </div>
+    );
+  }
+
+  let containerStyle: React.CSSProperties = {};
+  if (videoAspect === "landscape") containerStyle = { aspectRatio: '16/9' };
+  else if (videoAspect === "portrait") containerStyle = { aspectRatio: '9/16', maxHeight: '80vh', margin: '0 auto' };
+  else containerStyle = { width: '100%', height: 'auto', minHeight: '300px' };
+
+  return (
+    <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
+      <div style={containerStyle}>
+        <iframe
+          src={`https://platform.twitter.com/widgets/tweet.html?dnt=true&id=${tweetId}&theme=dark`}
+          className="w-full h-full border-0"
+          allowFullScreen
+          sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-modals"
+        />
+      </div>
+    </div>
+  );
+}
+
+// ------------------- مكون TikTok iframe -------------------
+function TikTokIframe({ embedUrl, videoAspect, isPreview = false }: { embedUrl: string; videoAspect: VideoAspect; isPreview?: boolean }) {
+  if (isPreview) {
+    return (
+      <div className="w-full h-full bg-black flex items-center justify-center">
+        <div className="w-12 h-12 rounded-full bg-gold/80 flex items-center justify-center pointer-events-none">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white">
+            <path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.76-.08 1.4-.54 2.79-1.35 3.99-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.15 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z"/>
+          </svg>
+        </div>
+      </div>
+    );
+  }
+
+  let containerStyle: React.CSSProperties = {};
+  if (videoAspect === "landscape") containerStyle = { aspectRatio: '16/9' };
+  else if (videoAspect === "portrait") containerStyle = { aspectRatio: '9/16', maxHeight: '80vh', margin: '0 auto' };
+  else containerStyle = { width: '100%', height: 'auto', minHeight: '300px' };
+
+  return (
+    <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
+      <div style={containerStyle}>
+        <iframe
+          src={embedUrl}
+          className="w-full h-full border-0"
+          allowFullScreen
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-modals"
+        />
+      </div>
+    </div>
+  );
+}
+
 function GoogleDriveIframe({ embedUrl, videoAspect, isPreview = false }: { embedUrl: string; videoAspect: VideoAspect; isPreview?: boolean }) {
   if (isPreview) {
     return (
@@ -440,7 +542,7 @@ interface MediaRendererProps {
 }
 
 export function MediaRenderer({ url, alt = "", videoAspect = "auto", isPreview = false }: MediaRendererProps) {
-  const [type, setType] = useState<"youtube" | "facebook" | "googledrive" | "streamtape" | "video" | "image" | null>(null);
+  const [type, setType] = useState<"youtube" | "facebook" | "twitter" | "tiktok" | "googledrive" | "streamtape" | "video" | "image" | null>(null);
   const [src, setSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
@@ -465,6 +567,24 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto", isPreview =
         if (embed) {
           setType("facebook");
           setSrc(embed);
+          return;
+        }
+      }
+
+      if (isTwitterVideoUrl(url)) {
+        const tweetId = url.match(/(?:twitter\.com|x\.com)\/(?:#!\/)?(\w+)\/status(?:es)?\/(\d+)/i)?.[2];
+        if (tweetId) {
+          setType("twitter");
+          setSrc(tweetId);
+          return;
+        }
+      }
+
+      if (isTikTokUrl(url)) {
+        const embedUrl = await getTikTokEmbedUrl(url);
+        if (embedUrl) {
+          setType("tiktok");
+          setSrc(embedUrl);
           return;
         }
       }
@@ -536,6 +656,10 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto", isPreview =
       return <YouTubeIframe videoId={src} videoAspect={videoAspect} isPreview={false} />;
     case "facebook":
       return <FacebookIframe embedUrl={src} videoAspect={videoAspect} isPreview={false} />;
+    case "twitter":
+      return <TwitterIframe tweetId={src} videoAspect={videoAspect} isPreview={false} />;
+    case "tiktok":
+      return <TikTokIframe embedUrl={src} videoAspect={videoAspect} isPreview={false} />;
     case "googledrive":
       return <GoogleDriveIframe embedUrl={src} videoAspect={videoAspect} isPreview={false} />;
     case "streamtape":
