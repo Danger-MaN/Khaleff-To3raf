@@ -194,3 +194,28 @@
   }
   .animate-fade-up { animation: fade-up 0.7s ease-out both; }
 }
+
+/* تحسين عرض الخطوط العربية */
+@layer base {
+  /* للعناوين الكبيرة */
+  h1, .font-display, .gradient-gold-text {
+    font-family: 'Cairo', 'Amiri', 'Cormorant Garamond', serif;
+    font-weight: 700;
+    letter-spacing: normal !important;
+    font-feature-settings: 'liga' on, 'kern' on;
+    text-rendering: geometricPrecision;
+    -webkit-font-smoothing: antialiased;
+    font-kerning: normal;
+  }
+  
+  /* للنصوص العادية */
+  body, p, span, div {
+    font-family: 'Amiri', 'Cairo', serif;
+  }
+}
+
+/* حل خاص لمشكلة الراء المقطوعة */
+.gradient-gold-text {
+  display: inline-block;
+  font-kerning: normal;
+}
