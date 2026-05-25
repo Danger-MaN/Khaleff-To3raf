@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { type Article } from "@/lib/articles";
 import { categoryLabel } from "@/lib/categories";
 import { MediaRenderer } from "./MediaRenderer";
+import { TranslatedText } from "./TranslatedText"; // أضف هذا الاستيراد
 
 const CATEGORY_ACCENT: Record<string, string> = {
   philosophy: "from-indigo-500/40 via-gold/30 to-transparent",
@@ -31,6 +32,10 @@ export function ArticleCard({ article, index = 0 }: { article: Article; index?: 
   const dot = CATEGORY_DOT[article.category] ?? DEFAULT_DOT;
 
   const featured = index % 5 === 0;
+
+  // الحصول على اسم القسم المترجم (المفتاح categoryLabel يعيد النص المترجم بالفعل)
+  // ولكن إذا كان categoryLabel لا يترجم، نستخدم TranslatedText مباشرة
+  const categoryDisplayName = categoryLabel(article.category, t);
 
   return (
     <Link
@@ -62,7 +67,10 @@ export function ArticleCard({ article, index = 0 }: { article: Article; index?: 
       <div className="flex flex-col gap-3 p-6 flex-1">
         <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.3em]">
           <span className={`inline-block h-1.5 w-1.5 rounded-full ${dot}`} />
-          <span className="text-gold">{categoryLabel(article.category, t)}</span>
+          {/* استخدام TranslatedText لضمان الترجمة */}
+          <span className="text-gold">
+            <TranslatedText text={categoryDisplayName} />
+          </span>
         </div>
 
         <h3 className={`font-display leading-tight text-foreground group-hover:text-gold transition-colors ${
