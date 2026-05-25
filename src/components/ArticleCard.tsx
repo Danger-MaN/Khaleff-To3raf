@@ -51,7 +51,7 @@ export function ArticleCard({ article, index = 0 }: { article: Article; index?: 
       </span>
 
       {article.mediaUrl && (
-        <div className={`overflow-hidden relative ${featured ? "aspect-[21/9]" : "aspect-[16/8]"}`}>
+        <div className={`overflow-hidden relative ${featured ? "aspect-[21/9]" : "aspect-[16/6]"}`}>
           <div className="absolute inset-0 transition-transform duration-700 group-hover:scale-105">
             <MediaRenderer url={article.mediaUrl} alt={title} />
           </div>
