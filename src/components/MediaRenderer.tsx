@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
+import Plyr from "plyr";
+import "plyr/dist/plyr.css";
 import type { VideoAspect } from "@/lib/articles";
 
 // ------------------- دوال مساعدة -------------------
@@ -78,11 +80,159 @@ async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null>
   }
 }
 
-// ------------------- مكونات iframe منفصلة (للتشغيل الكامل) -------------------
+// ------------------- مكون عرض اللقطات (ThumbnailStrip) -------------------
+interface ThumbnailStripProps {
+  videoElement: HTMLVideoElement | null;
+  onSeek: (time: number) => void;
+  isVisible?: boolean;
+}
+
+const SEEK_INTERVAL_MS = 3000;
+const THUMBNAIL_COUNT = 10;
+
+function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStripProps) {
+  const [thumbnails, setThumbnails] = useState<string[]>([]);
+  const [duration, setDuration] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(true);
+
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const isPlayingRef = useRef(isPlaying);
+  const activeIndexRef = useRef(activeIndex);
+  const thumbnailsLengthRef = useRef(0);
+  const durationRef = useRef(0);
+  const canvasRef = useRef<HTMLCanvasElement>(document.createElement('canvas'));
+
+  useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
+  useEffect(() => { activeIndexRef.current = activeIndex; }, [activeIndex]);
+  useEffect(() => { thumbnailsLengthRef.current = thumbnails.length; }, [thumbnails]);
+  useEffect(() => { durationRef.current = duration; }, [duration]);
+
+  const goToNextThumbnail = useCallback(() => {
+    const total = thumbnailsLengthRef.current;
+    if (total === 0) return;
+    setActiveIndex((activeIndexRef.current + 1) % total);
+  }, []);
+
+  useEffect(() => {
+    if (loading || thumbnails.length === 0) return;
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    intervalRef.current = setInterval(() => {
+      if (isPlayingRef.current) goToNextThumbnail();
+    }, SEEK_INTERVAL_MS);
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+  }, [loading, thumbnails.length, goToNextThumbnail]);
+
+  useEffect(() => {
+    const video = videoElement;
+    if (!video) return;
+    const handlePlay = () => { if (isPlayingRef.current) setIsPlaying(false); };
+    const handlePause = () => { if (isPlayingRef.current) setIsPlaying(false); };
+    video.addEventListener('play', handlePlay);
+    video.addEventListener('pause', handlePause);
+    return () => {
+      video.removeEventListener('play', handlePlay);
+      video.removeEventListener('pause', handlePause);
+    };
+  }, [videoElement]);
+
+  useEffect(() => {
+    if (durationRef.current > 0 && thumbnails.length > 0) {
+      const step = durationRef.current / THUMBNAIL_COUNT;
+      onSeek(step * activeIndex);
+    }
+  }, [activeIndex, thumbnails.length, onSeek]);
+
+  const generateThumbnails = useCallback(async () => {
+    if (!videoElement) return;
+    setLoading(true);
+    const vid = videoElement;
+    const dur = vid.duration;
+    if (!dur || isNaN(dur)) return;
+    setDuration(dur);
+    const thumbs: string[] = [];
+    const step = dur / THUMBNAIL_COUNT;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    canvas.width = 120;
+    canvas.height = 68;
+
+    for (let i = 0; i < THUMBNAIL_COUNT; i++) {
+      vid.currentTime = step * i;
+      await new Promise<void>((resolve) => {
+        const seekedHandler = () => {
+          vid.removeEventListener('seeked', seekedHandler);
+          try {
+            ctx?.drawImage(vid, 0, 0, canvas.width, canvas.height);
+            thumbs.push(canvas.toDataURL('image/jpeg', 0.6));
+          } catch { thumbs.push(''); }
+          resolve();
+        };
+        vid.addEventListener('seeked', seekedHandler);
+      });
+    }
+    setThumbnails(thumbs);
+    setLoading(false);
+  }, [videoElement]);
+
+  const restartTimer = useCallback(() => { setActiveIndex(0); setIsPlaying(true); }, []);
+  const handleThumbnailClick = useCallback((index: number, time: number) => { setIsPlaying(false); setActiveIndex(index); onSeek(time); }, [onSeek]);
+
+  useEffect(() => {
+    if (!videoElement) return;
+    setIsPlaying(true);
+    setActiveIndex(0);
+    if (videoElement.readyState >= 2) generateThumbnails();
+    else videoElement.addEventListener('loadedmetadata', generateThumbnails, { once: true });
+  }, [videoElement, generateThumbnails]);
+
+  if (!isVisible) return null;
+  if (loading) return <div className="flex justify-center items-center gap-2 mt-3 p-2 bg-black/50 rounded-lg"><div className="animate-spin rounded-full h-5 w-5 border-2 border-gold border-t-transparent"></div><span className="text-xs text-gold/70">جاري تحضير المشاهد...</span></div>;
+  if (thumbnails.length === 0) return null;
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <div className="mt-3 w-full">
+      <div className="flex justify-between items-center mb-2 px-1">
+        <div className="flex items-center gap-3">
+          <span className="text-[11px] text-white/60">
+            {isPlaying ? `🔄 تسليط ضوء تلقائي (كل ${SEEK_INTERVAL_MS/1000} ثانية)` : '⏸️ توقف مؤقت'}
+          </span>
+          <span className="text-[11px] text-gold/80">{activeIndex + 1} / {THUMBNAIL_COUNT}</span>
+        </div>
+        {!isPlaying && <button onClick={restartTimer} className="text-[11px] text-gold/80 hover:text-gold">▶ إعادة التشغيل</button>}
+      </div>
+      <div className="flex gap-2 overflow-x-auto scrollbar-thin scrollbar-track-gray-800 scrollbar-thumb-gold/50 pb-2">
+        {thumbnails.map((thumb, idx) => {
+          const time = (duration / THUMBNAIL_COUNT) * idx;
+          const percentage = Math.round((time / duration) * 100);
+          const isActive = activeIndex === idx;
+          return (
+            <button key={idx} onClick={() => handleThumbnailClick(idx, time)} className={`flex flex-col items-center gap-1 transition-all hover:scale-105 focus:outline-none group flex-shrink-0 ${isActive ? 'scale-105' : ''}`}>
+              <div className="relative">
+                <img src={thumb} alt={`مشهد ${idx+1}`} className={`w-28 h-16 object-cover rounded-lg border transition-all ${isActive ? 'border-gold ring-2 ring-gold/50 shadow-lg' : 'border-gold/30 group-hover:border-gold'}`} loading="lazy" />
+                <div className="absolute bottom-1 right-1 bg-black/70 text-[10px] px-1 rounded text-gold">{percentage}%</div>
+                {isActive && <div className="absolute -top-2 left-1/2 transform -translate-x-1/2 bg-gold text-black text-[10px] px-1.5 py-0.5 rounded-full whitespace-nowrap">الحالي</div>}
+              </div>
+              <span className={`text-[10px] ${isActive ? 'text-gold font-medium' : 'text-white/70 group-hover:text-gold'}`}>{formatTime(time)}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ------------------- مكونات iframe منفصلة للمنصات -------------------
 
 function YouTubeIframe({ videoId, videoAspect, isPreview = false }: { videoId: string; videoAspect: VideoAspect; isPreview?: boolean }) {
   if (isPreview) {
-    // في وضع المعاينة: نعرض صورة مصغرة من YouTube
     return (
       <div className="relative w-full rounded-lg overflow-hidden bg-black" style={{ aspectRatio: videoAspect === "landscape" ? '16/9' : videoAspect === "portrait" ? '9/16' : '16/9' }}>
         <img
@@ -120,7 +270,6 @@ function YouTubeIframe({ videoId, videoAspect, isPreview = false }: { videoId: s
 
 function FacebookIframe({ embedUrl, videoAspect, isPreview = false }: { embedUrl: string; videoAspect: VideoAspect; isPreview?: boolean }) {
   if (isPreview) {
-    // في وضع المعاينة: نعرض صورة مصغرة (يمكن استخدام خدمة خارجية، لكن سنعرض أيقونة)
     return (
       <div className="relative w-full rounded-lg overflow-hidden bg-black" style={{ aspectRatio: videoAspect === "landscape" ? '16/9' : videoAspect === "portrait" ? '9/16' : '16/9' }}>
         <div className="absolute inset-0 flex items-center justify-center bg-black/50">
@@ -128,7 +277,6 @@ function FacebookIframe({ embedUrl, videoAspect, isPreview = false }: { embedUrl
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>
           </div>
         </div>
-        <div className="text-white text-xs absolute bottom-2 left-2 bg-black/50 px-2 rounded">Facebook Video</div>
       </div>
     );
   }
@@ -168,7 +316,6 @@ function GoogleDriveIframe({ embedUrl, videoAspect, isPreview = false }: { embed
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>
           </div>
         </div>
-        <div className="text-white text-xs absolute bottom-2 left-2 bg-black/50 px-2 rounded">Google Drive</div>
       </div>
     );
   }
@@ -192,12 +339,114 @@ function GoogleDriveIframe({ embedUrl, videoAspect, isPreview = false }: { embed
   );
 }
 
+// ------------------- مكون الفيديو المباشر مع Plyr و ThumbnailStrip -------------------
+interface DirectVideoPlayerProps {
+  src: string;
+  videoAspect: VideoAspect;
+}
+
+function DirectVideoPlayer({ src, videoAspect }: DirectVideoPlayerProps) {
+  const [playerReady, setPlayerReady] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const playerRef = useRef<Plyr | null>(null);
+
+  useEffect(() => {
+    if (!videoRef.current) return;
+    if (playerRef.current) playerRef.current.destroy();
+
+    const initializePlayer = () => {
+      if (!videoRef.current) return;
+      const isPortrait = videoAspect === "portrait";
+      const controlsList = isPortrait
+        ? ["play-large", "play", "progress", "current-time", "duration", "mute", "fullscreen"]
+        : ["play-large", "play", "progress", "current-time", "duration", "mute", "volume", "captions", "settings", "pip", "airplay", "fullscreen"];
+
+      playerRef.current = new Plyr(videoRef.current, {
+        controls: controlsList,
+        disableContextMenu: true,
+        seekTime: 10,
+        speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
+        download: false,
+        storage: { enabled: true, key: 'plyr' },
+      });
+      setPlayerReady(true);
+    };
+
+    if (videoRef.current.readyState >= 1) initializePlayer();
+    else videoRef.current.addEventListener('loadedmetadata', initializePlayer, { once: true });
+
+    return () => { playerRef.current?.destroy(); playerRef.current = null; setPlayerReady(false); };
+  }, [src, videoAspect]);
+
+  const handleSeek = (time: number) => {
+    if (videoRef.current) videoRef.current.currentTime = time;
+  };
+
+  const isPortrait = videoAspect === "portrait";
+  let containerStyle: React.CSSProperties = { display: 'flex', justifyContent: 'center' };
+  let videoStyle: React.CSSProperties = { display: 'block', objectFit: 'contain', maxWidth: '100%', maxHeight: '80vh' };
+
+  if (videoAspect === "landscape") {
+    containerStyle = { aspectRatio: '16/9', maxWidth: '100%' };
+    videoStyle = { width: '100%', height: '100%', objectFit: 'contain' };
+  } else if (videoAspect === "portrait") {
+    containerStyle = { aspectRatio: '9/16', maxHeight: '80vh', width: 'auto', margin: '0 auto' };
+    videoStyle = { width: '100%', height: '100%', objectFit: 'contain' };
+  }
+
+  return (
+    <div className="w-full bg-black rounded-lg border border-gold/20 overflow-hidden">
+      <div style={containerStyle} className="w-full">
+        <video
+          ref={videoRef}
+          style={videoStyle}
+          playsInline
+          crossOrigin="anonymous"
+          preload="metadata"
+        >
+          <source src={src} type="video/mp4" />
+          متصفحك لا يدعم تشغيل الفيديو.
+        </video>
+      </div>
+      {playerReady && (
+        <div className="mt-2">
+          <ThumbnailStrip
+            videoElement={videoRef.current}
+            onSeek={handleSeek}
+            isVisible={true}
+          />
+        </div>
+      )}
+      <style jsx>{`
+        .portrait-mode :global(.plyr__controls) {
+          display: flex;
+          flex-wrap: wrap;
+          justify-content: center;
+          gap: 6px;
+          padding: 6px;
+        }
+        @media (max-width: 480px) {
+          .portrait-mode :global(.plyr__controls) {
+            overflow-x: auto;
+            flex-wrap: nowrap;
+            justify-content: flex-start;
+          }
+        }
+        :global(.plyr__controls) {
+          background: rgba(0, 0, 0, 0.7);
+          backdrop-filter: blur(4px);
+        }
+      `}</style>
+    </div>
+  );
+}
+
 // ------------------- المكون الرئيسي -------------------
 interface MediaRendererProps {
   url?: string;
   alt?: string;
   videoAspect?: VideoAspect;
-  isPreview?: boolean; // جديد: وضع المعاينة (في القوائم والبطاقات)
+  isPreview?: boolean; // إذا كان true: معاينة (صورة مصغرة أو أيقونة)
 }
 
 export function MediaRenderer({ url, alt = "", videoAspect = "auto", isPreview = false }: MediaRendererProps) {
@@ -278,18 +527,17 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto", isPreview =
   if (loading) return <div className="p-8 text-center text-gold">جاري التحميل...</div>;
   if (error || !src || !type) return <div className="p-8 text-center text-red-400">لا يمكن عرض المحتوى. <a href={url} target="_blank" rel="noopener noreferrer">فتح الرابط ↗</a></div>;
 
-  // عرض حسب النوع مع دعم isPreview
-  switch (type) {
-    case "youtube":
-      return <YouTubeIframe videoId={src} videoAspect={videoAspect} isPreview={isPreview} />;
-    case "facebook":
-      return <FacebookIframe embedUrl={src} videoAspect={videoAspect} isPreview={isPreview} />;
-    case "googledrive":
-      return <GoogleDriveIframe embedUrl={src} videoAspect={videoAspect} isPreview={isPreview} />;
-    case "streamtape":
-    case "video": {
-      if (isPreview) {
-        // في وضع المعاينة: نعرض أول إطار من الفيديو (ممكن استخدام خدمة خارجية) أو أيقونة
+  // المعاينة (isPreview = true): عرض صورة مصغرة أو أيقونة لجميع الأنواع
+  if (isPreview) {
+    switch (type) {
+      case "youtube":
+        return <YouTubeIframe videoId={src} videoAspect={videoAspect} isPreview={true} />;
+      case "facebook":
+        return <FacebookIframe embedUrl={src} videoAspect={videoAspect} isPreview={true} />;
+      case "googledrive":
+        return <GoogleDriveIframe embedUrl={src} videoAspect={videoAspect} isPreview={true} />;
+      case "streamtape":
+      case "video":
         return (
           <div className="relative w-full rounded-lg overflow-hidden bg-black" style={{ aspectRatio: videoAspect === "landscape" ? '16/9' : videoAspect === "portrait" ? '9/16' : '16/9' }}>
             <div className="absolute inset-0 flex items-center justify-center bg-black/50">
@@ -299,21 +547,26 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto", isPreview =
             </div>
           </div>
         );
-      }
-      let videoStyle: React.CSSProperties = { width: '100%', height: 'auto' };
-      if (videoAspect === "portrait") {
-        videoStyle = { height: '80vh', width: 'auto', margin: '0 auto' };
-      }
-      return (
-        <div className="w-full bg-black rounded-lg border border-gold/20 overflow-hidden">
-          <video src={src} style={videoStyle} controls playsInline className="w-full h-auto">
-            متصفحك لا يدعم الفيديو.
-          </video>
-        </div>
-      );
+      case "image":
+        return <img src={src} alt={alt} className="w-full rounded-lg border border-gold/20 object-cover" style={{ aspectRatio: '16/9' }} />;
+      default:
+        return null;
     }
+  }
+
+  // وضع التشغيل الكامل (isPreview = false)
+  switch (type) {
+    case "youtube":
+      return <YouTubeIframe videoId={src} videoAspect={videoAspect} isPreview={false} />;
+    case "facebook":
+      return <FacebookIframe embedUrl={src} videoAspect={videoAspect} isPreview={false} />;
+    case "googledrive":
+      return <GoogleDriveIframe embedUrl={src} videoAspect={videoAspect} isPreview={false} />;
+    case "streamtape":
+    case "video":
+      return <DirectVideoPlayer src={src} videoAspect={videoAspect} />;
     case "image":
-      return <img src={src} alt={alt} className="w-full rounded-lg border border-gold/20" style={{ objectFit: 'cover' }} />;
+      return <img src={src} alt={alt} className="w-full rounded-lg border border-gold/20" />;
     default:
       return null;
   }
