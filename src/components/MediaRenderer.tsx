@@ -532,17 +532,22 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto", isPreview =
 
   // ===================== وضع المعاينة (isPreview = true) =====================
   if (isPreview) {
+    let previewContent = null;
+
     switch (type) {
       case "youtube":
-        return <YouTubeIframe videoId={src} videoAspect={videoAspect} isPreview={true} />;
+        previewContent = <YouTubeIframe videoId={src} videoAspect={videoAspect} isPreview={true} />;
+        break;
       case "facebook":
-        return <FacebookIframe embedUrl={src} videoAspect={videoAspect} isPreview={true} />;
+        previewContent = <FacebookIframe embedUrl={src} videoAspect={videoAspect} isPreview={true} />;
+        break;
       case "googledrive":
-        return <GoogleDriveIframe embedUrl={src} videoAspect={videoAspect} isPreview={true} />;
+        previewContent = <GoogleDriveIframe embedUrl={src} videoAspect={videoAspect} isPreview={true} />;
+        break;
       case "streamtape":
       case "video":
-        return (
-          <div className="relative w-full h-full overflow-hidden bg-black">
+        previewContent = (
+          <div className="w-full h-full overflow-hidden bg-black">
             <div className="w-full h-full bg-gradient-to-br from-gray-900 to-black flex items-center justify-center">
               <div className="w-12 h-12 rounded-full bg-gold/80 flex items-center justify-center pointer-events-none">
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>
@@ -550,15 +555,19 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto", isPreview =
             </div>
           </div>
         );
+        break;
       case "image":
-        return (
-          <div className="relative w-full h-full overflow-hidden bg-black">
+        previewContent = (
+          <div className="w-full h-full overflow-hidden bg-black">
             <img src={src} alt={alt} className="w-full h-full object-cover" />
           </div>
         );
+        break;
       default:
-        return null;
+        previewContent = null;
     }
+
+    return <div className="w-full h-full">{previewContent}</div>;
   }
 
   // ===================== وضع التشغيل الكامل (isPreview = false) =====================
