@@ -13,8 +13,6 @@ import { Plus, Pencil, Trash2, LogOut, Lock, X } from "lucide-react";
 
 export const Route = createFileRoute("/admin")({ component: AdminPage });
 
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
-
 const AUTH_KEY = "kt_admin_auth";
 
 function AdminPage() {
@@ -22,20 +20,36 @@ function AdminPage() {
   const [authed, setAuthed] = useState(false);
   const [pw, setPw] = useState("");
   const [error, setError] = useState("");
+  const [isVerifying, setIsVerifying] = useState(false);
 
   useEffect(() => {
     if (sessionStorage.getItem(AUTH_KEY) === "1") setAuthed(true);
   }, []);
 
-  const login = (e: React.FormEvent) => {
+  const login = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (pw === ADMIN_PASSWORD) {
-      sessionStorage.setItem(AUTH_KEY, "1");
-      setAuthed(true);
-      setError("");
-    } else {
-      alert(ADMIN_PASSWORD);
-      setError(t("admin.wrong_password"));
+    setIsVerifying(true);
+    setError("");
+    
+    try {
+      const response = await fetch('/.netlify/functions/verify-admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pw })
+      });
+      const data = await response.json();
+      
+      if (data.isValid) {
+        sessionStorage.setItem(AUTH_KEY, "1");
+        setAuthed(true);
+        setError("");
+      } else {
+        setError(t("admin.wrong_password"));
+      }
+    } catch (err) {
+      setError("حدث خطأ في الاتصال");
+    } finally {
+      setIsVerifying(false);
     }
   };
 
@@ -51,7 +65,7 @@ function AdminPage() {
               </div>
             </div>
             <h2 className="font-display text-2xl text-center mb-2 gradient-gold-text">{t("admin.title")}</h2>
-            <p className="text-xs text-center text-muted-foreground mb-6">Admin Password: <span className="text-gold"></span></p>
+            <p className="text-xs text-center text-muted-foreground mb-6">demo password: <span className="text-gold">khaleff2025</span></p>
             <input
               type="password"
               value={pw}
@@ -59,10 +73,15 @@ function AdminPage() {
               placeholder={t("admin.password")}
               className="w-full px-4 py-3 bg-input border border-gold/30 rounded-md outline-none focus:border-gold mb-3"
               autoFocus
+              disabled={isVerifying}
             />
             {error && <p className="text-xs text-destructive mb-3">{error}</p>}
-            <button type="submit" className="w-full py-3 bg-gold text-background uppercase tracking-widest text-xs rounded-md hover:opacity-90 transition">
-              {t("admin.login")}
+            <button 
+              type="submit" 
+              className="w-full py-3 bg-gold text-background uppercase tracking-widest text-xs rounded-md hover:opacity-90 transition disabled:opacity-50"
+              disabled={isVerifying}
+            >
+              {isVerifying ? "جاري التحقق..." : t("admin.login")}
             </button>
           </form>
         </div>
