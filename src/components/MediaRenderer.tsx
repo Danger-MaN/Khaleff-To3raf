@@ -234,13 +234,16 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
 function YouTubeIframe({ videoId, videoAspect, isPreview = false }: { videoId: string; videoAspect: VideoAspect; isPreview?: boolean }) {
   if (isPreview) {
     return (
-      <div className="relative w-full rounded-lg overflow-hidden bg-black" style={{ aspectRatio: videoAspect === "landscape" ? '16/9' : videoAspect === "portrait" ? '9/16' : '16/9' }}>
+      <div className="relative w-full h-full overflow-hidden bg-black">
         <img
-          src={`https://img.youtube.com/vi/${videoId}/hqdefault.jpg`}
+          src={`https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`}
           alt="Video thumbnail"
           className="w-full h-full object-cover"
+          onError={(e) => {
+            (e.target as HTMLImageElement).src = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+          }}
         />
-        <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+        <div className="absolute inset-0 flex items-center justify-center bg-black/20 pointer-events-none">
           <div className="w-12 h-12 rounded-full bg-gold/80 flex items-center justify-center">
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>
           </div>
@@ -271,9 +274,9 @@ function YouTubeIframe({ videoId, videoAspect, isPreview = false }: { videoId: s
 function FacebookIframe({ embedUrl, videoAspect, isPreview = false }: { embedUrl: string; videoAspect: VideoAspect; isPreview?: boolean }) {
   if (isPreview) {
     return (
-      <div className="relative w-full rounded-lg overflow-hidden bg-black" style={{ aspectRatio: videoAspect === "landscape" ? '16/9' : videoAspect === "portrait" ? '9/16' : '16/9' }}>
-        <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-          <div className="w-12 h-12 rounded-full bg-gold/80 flex items-center justify-center">
+      <div className="relative w-full h-full overflow-hidden bg-black">
+        <div className="w-full h-full bg-gradient-to-br from-gray-900 to-black flex items-center justify-center">
+          <div className="w-12 h-12 rounded-full bg-gold/80 flex items-center justify-center pointer-events-none">
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>
           </div>
         </div>
@@ -310,9 +313,9 @@ function FacebookIframe({ embedUrl, videoAspect, isPreview = false }: { embedUrl
 function GoogleDriveIframe({ embedUrl, videoAspect, isPreview = false }: { embedUrl: string; videoAspect: VideoAspect; isPreview?: boolean }) {
   if (isPreview) {
     return (
-      <div className="relative w-full rounded-lg overflow-hidden bg-black" style={{ aspectRatio: videoAspect === "landscape" ? '16/9' : videoAspect === "portrait" ? '9/16' : '16/9' }}>
-        <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-          <div className="w-12 h-12 rounded-full bg-gold/80 flex items-center justify-center">
+      <div className="relative w-full h-full overflow-hidden bg-black">
+        <div className="w-full h-full bg-gradient-to-br from-gray-900 to-black flex items-center justify-center">
+          <div className="w-12 h-12 rounded-full bg-gold/80 flex items-center justify-center pointer-events-none">
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>
           </div>
         </div>
@@ -446,7 +449,7 @@ interface MediaRendererProps {
   url?: string;
   alt?: string;
   videoAspect?: VideoAspect;
-  isPreview?: boolean; // إذا كان true: معاينة (صورة مصغرة أو أيقونة)
+  isPreview?: boolean;
 }
 
 export function MediaRenderer({ url, alt = "", videoAspect = "auto", isPreview = false }: MediaRendererProps) {
@@ -527,7 +530,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto", isPreview =
   if (loading) return <div className="p-8 text-center text-gold">جاري التحميل...</div>;
   if (error || !src || !type) return <div className="p-8 text-center text-red-400">لا يمكن عرض المحتوى. <a href={url} target="_blank" rel="noopener noreferrer">فتح الرابط ↗</a></div>;
 
-  // المعاينة (isPreview = true): عرض صورة مصغرة أو أيقونة لجميع الأنواع
+  // ===================== وضع المعاينة (isPreview = true) =====================
   if (isPreview) {
     switch (type) {
       case "youtube":
@@ -539,22 +542,26 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto", isPreview =
       case "streamtape":
       case "video":
         return (
-          <div className="relative w-full rounded-lg overflow-hidden bg-black" style={{ aspectRatio: videoAspect === "landscape" ? '16/9' : videoAspect === "portrait" ? '9/16' : '16/9' }}>
-            <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-              <div className="w-12 h-12 rounded-full bg-gold/80 flex items-center justify-center">
+          <div className="relative w-full h-full overflow-hidden bg-black">
+            <div className="w-full h-full bg-gradient-to-br from-gray-900 to-black flex items-center justify-center">
+              <div className="w-12 h-12 rounded-full bg-gold/80 flex items-center justify-center pointer-events-none">
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>
               </div>
             </div>
           </div>
         );
       case "image":
-        return <img src={src} alt={alt} className="w-full rounded-lg border border-gold/20 object-cover" style={{ aspectRatio: '16/9' }} />;
+        return (
+          <div className="relative w-full h-full overflow-hidden bg-black">
+            <img src={src} alt={alt} className="w-full h-full object-cover" />
+          </div>
+        );
       default:
         return null;
     }
   }
 
-  // وضع التشغيل الكامل (isPreview = false)
+  // ===================== وضع التشغيل الكامل (isPreview = false) =====================
   switch (type) {
     case "youtube":
       return <YouTubeIframe videoId={src} videoAspect={videoAspect} isPreview={false} />;
