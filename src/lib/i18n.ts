@@ -59,7 +59,7 @@ const resources = {
       slogan: "حيث تُكسر اليقينيات وتُولد الأسئلة",
       tagline: "فكر • علم • ثقافة",
       nav: { home: "الرئيسية", articles: "المقالات", admin: "لوحة التحكم" },
-      hero: { cta_read: "ابدأ القراءة", cta_about: "عن المنصة", eyebrow: "منصّة فكرية مضد المألوف" },
+      hero: { cta_read: "ابدأ القراءة", cta_about: "عن المنصة", eyebrow: "منصّة فكرية ضد المألوف" },
       filters: { all: "الكل", search: "ابحث في المقالات..." },
       article: {
         read_more: "اقرأ المقال",
@@ -126,7 +126,7 @@ const resources = {
       brand: "Khaleff To3raf", slogan: "Là où les certitudes se brisent et les questions naissent",
       tagline: "Philosophie • Science • Culture",
       nav: { home: "Accueil", articles: "Articles", admin: "Admin" },
-      hero: { cta_read: "Commencer à lire", cta_about: "À propos", eyebrow: "Une plateforme intellectuelle contestataire" },
+      hero: { cta_read: "Commencer à lire", cta_about: "À propos", eyebrow: "Une plateforme intellectuelle contre le conformisme" },
       filters: { all: "Tous", search: "Rechercher..." },
       article: { read_more: "Lire l'article", translating: "Traduction...", translated_notice: "Traduit automatiquement", back: "← Retour", no_articles: "Aucun article publié." },
       theme: { label: "Thème", cyber: "Temple Cyber", papyrus: "Papyrus Antique", marble: "Marbre Classique" },
@@ -141,7 +141,7 @@ const resources = {
       brand: "Khaleff To3raf", slogan: "Donde las certezas se rompen y nacen las preguntas",
       tagline: "Filosofía • Ciencia • Cultura",
       nav: { home: "Inicio", articles: "Artículos", admin: "Admin" },
-      hero: { cta_read: "Empezar a leer", cta_about: "Acerca", eyebrow: "Una plataforma intelectual contracorriente" },
+      hero: { cta_read: "Empezar a leer", cta_about: "Acerca", eyebrow: "Una plataforma intelectual contra lo convencional" },
       filters: { all: "Todos", search: "Buscar..." },
       article: { read_more: "Leer", translating: "Traduciendo...", translated_notice: "Traducido automáticamente", back: "← Volver", no_articles: "Sin artículos." },
       theme: { label: "Tema", cyber: "Templo Cibernético", papyrus: "Papiro Antiguo", marble: "Mármol Clásico" },
@@ -154,9 +154,9 @@ const resources = {
   de: {
     translation: {
       brand: "Khaleff To3raf", slogan: "Wo Gewissheiten zerbrechen und Fragen geboren werden",
-      tagline: "Philosophie • Experimentelle Wissenschaft • kultur",
+      tagline: "Philosophie • Wissenschaft • kultur",
       nav: { home: "Start", articles: "Artikel", admin: "Admin" },
-      hero: { cta_read: "Lesen beginnen", cta_about: "Über", eyebrow: "Eine konträre intellektuelle Plattform" },
+      hero: { cta_read: "Lesen beginnen", cta_about: "Über", eyebrow: "Eine intellektuelle Plattform gegen das Gewöhnliche" },
       filters: { all: "Alle", search: "Suchen..." },
       article: { read_more: "Lesen", translating: "Übersetze...", translated_notice: "Automatisch übersetzt", back: "← Zurück", no_articles: "Keine Artikel." },
       theme: { label: "Thema", cyber: "Cyber-Tempel", papyrus: "Antikes Papyrus", marble: "Klassischer Marmor" },
