@@ -34,6 +34,7 @@ function AdminPage() {
       setAuthed(true);
       setError("");
     } else {
+      alert(ADMIN_PASSWORD);
       setError(t("admin.wrong_password"));
     }
   };
