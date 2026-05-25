@@ -1,7 +1,8 @@
 import { Link } from "@tanstack/react-router";
-import { useTranslation }react-i18next";
+import { useTranslation } from "react-i18next";
 import { type Article } from "@/lib/articles";
 import { categoryLabel } from "@/lib/categories";
+import { MediaRenderer } from "./MediaRenderer";
 
 const CATEGORY_ACCENT: Record<string, string> = {
   philosophy: "from-indigo-500/40 via-gold/30 to-transparent",
@@ -51,12 +52,8 @@ export function ArticleCard({ article, index = 0 }: { article: Article; index?: 
 
       {article.mediaUrl && (
         <div className={`overflow-hidden relative ${featured ? "aspect-[21/9]" : "aspect-[16/10]"}`}>
-          {/* صورة ثابتة تملأ المساحة بالكامل */}
-          <div className="w-full h-full bg-gradient-to-br from-gray-900 to-black flex items-center justify-center">
-            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-gold/60">
-              <rect x="2" y="2" width="20" height="20" rx="2.5" />
-              <path d="m9 8 6 4-6 4V8z" />
-            </svg>
+          <div className="absolute inset-0 transition-transform duration-700 group-hover:scale-105">
+            <MediaRenderer url={article.mediaUrl} alt={title} />
           </div>
           <div className="absolute inset-0 bg-gradient-to-t from-card via-card/30 to-transparent opacity-80 pointer-events-none" />
         </div>
