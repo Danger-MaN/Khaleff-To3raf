@@ -32,33 +32,20 @@ function isGoogleDriveUrl(url: string): boolean {
   return /drive\.google\.com\/(file\/d\/|open\?id=)/i.test(url);
 }
 
-// للحصول على رابط iframe لـ Google Drive (مثل YouTube بالضبط)
-function getGoogleDriveEmbedUrl(url: string): string | null {
-  let fileId: string | null = null;
+// استخراج معرف الملف من رابط Google Drive
+function getGoogleDriveFileId(url: string): string | null {
   const matchFile = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
-  if (matchFile) {
-    fileId = matchFile[1];
-  } else {
-    const matchOpen = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-    if (matchOpen) fileId = matchOpen[1];
-  }
-  if (!fileId) return null;
-  // نفس صيغة YouTube ولكن لـ Drive
-  return `https://drive.google.com/file/d/${fileId}/preview`;
+  if (matchFile) return matchFile[1];
+  const matchOpen = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (matchOpen) return matchOpen[1];
+  return null;
 }
 
-// للحصول على رابط إذا كان الفيديو من النوع القصير (Shorts) من Drive
-function getGoogleDriveShortsUrl(url: string): string | null {
-  let fileId: string | null = null;
-  const matchFile = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
-  if (matchFile) {
-    fileId = matchFile[1];
-  } else {
-    const matchOpen = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-    if (matchOpen) fileId = matchOpen[1];
-  }
+// تحويل رابط Google Drive إلى رابط مباشر (مثل UC)
+function getGoogleDriveDirectUrl(url: string): string | null {
+  const fileId = getGoogleDriveFileId(url);
   if (!fileId) return null;
-  return `https://drive.google.com/file/d/${fileId}/preview`;
+  return `https://drive.google.com/uc?export=download&id=${fileId}`;
 }
 
 async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null> {
@@ -246,7 +233,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
       setPlayerReady(false);
       if (!url) return;
 
-      // 1. YouTube
+      // 1. YouTube (iframe فقط)
       const ytId = getYouTubeId(url);
       if (ytId) {
         setVideoSrc(`https://www.youtube.com/embed/${ytId}`);
@@ -254,12 +241,11 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
         return;
       }
 
-      // 2. Google Drive (iframe مثل YouTube تماماً)
+      // 2. Google Drive -> تحويل إلى رابط مباشر UC (يتعامل معه Plyr)
       if (isGoogleDriveUrl(url)) {
-        const embedUrl = getGoogleDriveEmbedUrl(url);
-        if (embedUrl) {
-          setVideoSrc(embedUrl);
-          setPlayerReady(true);
+        const directUrl = getGoogleDriveDirectUrl(url);
+        if (directUrl) {
+          setVideoSrc(directUrl);
           return;
         } else {
           setError(true);
@@ -304,12 +290,12 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
     return () => { isMounted = false; };
   }, [url]);
 
-  // تهيئة Plyr فقط للفيديو المباشر (StreamTape، MP4)
+  // تهيئة Plyr فقط للفيديو المباشر (StreamTape، Google Drive UC، MP4)
   useEffect(() => {
     if (!videoRef.current) return;
     if (!videoSrc) return;
-    // إذا كان iframe (YouTube أو Drive)، لا نستخدم Plyr
-    if (videoSrc.includes('youtube.com/embed') || videoSrc.includes('drive.google.com/file/d/')) return;
+    // YouTube iframe نعرضه بشكل منفصل
+    if (videoSrc.includes('youtube.com/embed')) return;
 
     if (playerRef.current) playerRef.current.destroy();
 
@@ -345,28 +331,19 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
   if (loading) return <div className="p-8 text-center text-gold">جاري تجهيز الفيديو...</div>;
   if (error || !videoSrc) return <div className="p-8 text-center text-red-400">لا يمكن عرض المحتوى. <a href={url} target="_blank" rel="noopener noreferrer" className="underline">فتح الرابط ↗</a></div>;
 
-  // YouTube أو Google Drive (iframe - يعاملان بنفس الطريقة تماماً)
-  if (videoSrc.includes('youtube.com/embed') || videoSrc.includes('drive.google.com/file/d/')) {
-    // تحديد نسبة العرض إلى الارتفاع حسب videoAspect
+  // YouTube (iframe فقط)
+  if (videoSrc.includes('youtube.com/embed')) {
     let containerStyle: React.CSSProperties = {};
-    let iframeStyle: React.CSSProperties = { width: '100%', height: '100%', border: 0 };
-    
-    if (videoAspect === "landscape") {
-      containerStyle = { aspectRatio: '16/9' };
-    } else if (videoAspect === "portrait") {
-      containerStyle = { aspectRatio: '9/16', maxHeight: '80vh', margin: '0 auto' };
-    } else {
-      // auto: نعطي ارتفاعاً تلقائياً
-      containerStyle = { width: '100%', height: 'auto', minHeight: '300px' };
-      iframeStyle = { width: '100%', height: '500px', border: 0 };
-    }
+    if (videoAspect === "landscape") containerStyle = { aspectRatio: '16/9' };
+    else if (videoAspect === "portrait") containerStyle = { aspectRatio: '9/16', maxHeight: '80vh', margin: '0 auto' };
+    else containerStyle = { width: '100%', height: 'auto', minHeight: '300px' };
 
     return (
       <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
         <div style={containerStyle} className="w-full">
           <iframe
             src={videoSrc}
-            style={iframeStyle}
+            style={{ width: '100%', height: '100%', border: 0 }}
             allowFullScreen
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           />
@@ -380,7 +357,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
     return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/20" />;
   }
 
-  // الفيديو المباشر (StreamTape، MP4) مع Plyr وأزرار متناسقة
+  // الفيديو المباشر (Google Drive UC، StreamTape، MP4) مع Plyr
   const isPortrait = videoAspect === "portrait";
   let containerStyle: React.CSSProperties = { display: 'flex', justifyContent: 'center' };
   let videoStyle: React.CSSProperties = { display: 'block', objectFit: 'contain', maxWidth: '100%', maxHeight: '80vh' };
