@@ -32,50 +32,6 @@ function isGoogleDriveUrl(url: string): boolean {
   return /drive\.google\.com\/(file\/d\/|open\?id=)/i.test(url);
 }
 
-/**
- * استخراج معرف الملف من رابط Google Drive
- */
-function getGoogleDriveFileId(url: string): string | null {
-  let fileId: string | null = null;
-  const matchFile = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
-  if (matchFile) {
-    fileId = matchFile[1];
-  } else {
-    const matchOpen = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-    if (matchOpen) fileId = matchOpen[1];
-  }
-  return fileId;
-}
-
-/**
- * الحصول على رابط مباشر للفيديو من Google Drive (للملفات العامة)
- */
-async function getGoogleDriveDirectUrl(url: string): Promise<string | null> {
-  const fileId = getGoogleDriveFileId(url);
-  if (!fileId) return null;
-
-  // قائمة بالروابط المحتملة (جربها واحداً تلو الآخر)
-  const candidates = [
-    `https://drive.usercontent.google.com/download?id=${fileId}&export=download&confirm=t`,
-    `https://drive.google.com/uc?export=download&id=${fileId}`,
-    `https://drive.usercontent.google.com/download?id=${fileId}&export=download`,
-  ];
-
-  for (const candidate of candidates) {
-    try {
-      // نرسل طلب HEAD للتحقق مما إذا كان الرابط صالحاً
-      const res = await fetch(candidate, { method: 'HEAD', mode: 'no-cors' });
-      // حتى مع mode: 'no-cors' لا نستطيع قراءة الرد، لكننا نفترض نجاحه
-      // إذا وصلنا إلى هنا ولم يرمِ خطأ، نعتبر الرابط صالحاً
-      return candidate;
-    } catch {
-      // فشل، جرب الرابط التالي
-      continue;
-    }
-  }
-  return null;
-}
-
 async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null> {
   try {
     const infoRes = await fetch(`/.netlify/functions/streamtape?url=${encodeURIComponent(shareUrl)}`);
@@ -84,6 +40,18 @@ async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null>
     return `/.netlify/functions/streamtape?direct=1&url=${encodeURIComponent(shareUrl)}`;
   } catch (err) {
     console.error("getStreamTapeProxiedUrl error:", err);
+    return null;
+  }
+}
+
+async function getGoogleDriveProxiedUrl(shareUrl: string): Promise<string | null> {
+  try {
+    const infoRes = await fetch(`/.netlify/functions/googledrive?url=${encodeURIComponent(shareUrl)}`);
+    const infoData = await infoRes.json();
+    if (!infoData.success) return null;
+    return `/.netlify/functions/googledrive?direct=1&url=${encodeURIComponent(shareUrl)}`;
+  } catch (err) {
+    console.error("getGoogleDriveProxiedUrl error:", err);
     return null;
   }
 }
@@ -269,33 +237,29 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
         return;
       }
 
-      // 2. Google Drive - نحاول الحصول على رابط مباشر
+      // 2. Google Drive (عبر الوكيل)
       if (isGoogleDriveUrl(url)) {
         setLoading(true);
-        const directUrl = await getGoogleDriveDirectUrl(url);
-        if (directUrl && isMounted) {
-          setVideoSrc(directUrl);
-          setLoading(false);
-          return;
-        } else {
-          if (isMounted) setError(true);
-          setLoading(false);
-          return;
+        const src = await getGoogleDriveProxiedUrl(url);
+        if (src && isMounted) {
+          setVideoSrc(src);
+        } else if (isMounted) {
+          setError(true);
         }
+        setLoading(false);
+        return;
       }
 
       // 3. StreamTape
       if (isStreamTapeUrl(url)) {
         setLoading(true);
-        try {
-          const src = await getStreamTapeProxiedUrl(url);
-          if (src && isMounted) setVideoSrc(src);
-          else if (isMounted) setError(true);
-        } catch {
-          if (isMounted) setError(true);
-        } finally {
-          if (isMounted) setLoading(false);
+        const src = await getStreamTapeProxiedUrl(url);
+        if (src && isMounted) {
+          setVideoSrc(src);
+        } else if (isMounted) {
+          setError(true);
         }
+        setLoading(false);
         return;
       }
 
@@ -327,13 +291,12 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
   useEffect(() => {
     if (!videoRef.current) return;
     if (!videoSrc) return;
-    if (videoSrc.includes('youtube.com/embed')) return; // YouTube نعرضه بـ iframe منفصل
+    if (videoSrc.includes('youtube.com/embed')) return;
 
     if (playerRef.current) playerRef.current.destroy();
 
     const initializePlayer = () => {
       if (!videoRef.current) return;
-      // اختيار الأزرار حسب وضع الفيديو (رأسي/أفقي)
       const isPortrait = videoAspect === "portrait";
       const controlsList = isPortrait
         ? ["play-large", "play", "progress", "current-time", "duration", "mute", "fullscreen"]
@@ -390,7 +353,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
     return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/20" />;
   }
 
-  // الفيديو المباشر (بما في ذلك Google Drive الآن!)
+  // الفيديو المباشر (StreamTape و Google Drive الآن)
   const isPortrait = videoAspect === "portrait";
   let containerStyle: React.CSSProperties = { display: 'flex', justifyContent: 'center' };
   let videoStyle: React.CSSProperties = { display: 'block', objectFit: 'contain', maxWidth: '100%', maxHeight: '80vh' };
@@ -427,12 +390,11 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
         </div>
       )}
       <style jsx>{`
-        /* تخصيص أزرار Plyr في الوضع الرأسي */
         .portrait-mode :global(.plyr__controls) {
           display: flex;
           flex-wrap: wrap;
           justify-content: center;
-          gap: 8px;
+          gap: 6px;
           padding: 6px;
         }
         @media (max-width: 480px) {
