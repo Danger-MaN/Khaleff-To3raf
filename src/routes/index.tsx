@@ -63,7 +63,7 @@ function Home() {
           <div className="absolute top-0 right-8 bottom-0 w-px column-line opacity-50 hidden md:block" />
         </div>
         <div className="relative mx-auto max-w-5xl px-6 pt-4 pb-12 text-center">
-          <div className="inline-block text-[10px] uppercase tracking-[0.5em] text-gold mb-3 animate-shimmer">
+          <div className="inline-block text-[10px] uppercase tracking-[0.5em] text-gold mb-5 animate-shimmer">
             ✦ {t("hero.eyebrow")} ✦
           </div>
           <h1 className="font-display text-6xl md:text-8xl leading-[0.95] mb-6 gradient-gold-text">
