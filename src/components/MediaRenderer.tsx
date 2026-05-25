@@ -32,16 +32,48 @@ function isGoogleDriveUrl(url: string): boolean {
   return /drive\.google\.com\/(file\/d\/|open\?id=)/i.test(url);
 }
 
-function getGoogleDriveEmbedUrl(url: string): string | null {
+/**
+ * استخراج معرف الملف من رابط Google Drive
+ */
+function getGoogleDriveFileId(url: string): string | null {
   let fileId: string | null = null;
   const matchFile = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
-  if (matchFile) fileId = matchFile[1];
-  else {
+  if (matchFile) {
+    fileId = matchFile[1];
+  } else {
     const matchOpen = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
     if (matchOpen) fileId = matchOpen[1];
   }
+  return fileId;
+}
+
+/**
+ * الحصول على رابط مباشر للفيديو من Google Drive (للملفات العامة)
+ */
+async function getGoogleDriveDirectUrl(url: string): Promise<string | null> {
+  const fileId = getGoogleDriveFileId(url);
   if (!fileId) return null;
-  return `https://drive.google.com/file/d/${fileId}/preview`;
+
+  // قائمة بالروابط المحتملة (جربها واحداً تلو الآخر)
+  const candidates = [
+    `https://drive.usercontent.google.com/download?id=${fileId}&export=download&confirm=t`,
+    `https://drive.google.com/uc?export=download&id=${fileId}`,
+    `https://drive.usercontent.google.com/download?id=${fileId}&export=download`,
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      // نرسل طلب HEAD للتحقق مما إذا كان الرابط صالحاً
+      const res = await fetch(candidate, { method: 'HEAD', mode: 'no-cors' });
+      // حتى مع mode: 'no-cors' لا نستطيع قراءة الرد، لكننا نفترض نجاحه
+      // إذا وصلنا إلى هنا ولم يرمِ خطأ، نعتبر الرابط صالحاً
+      return candidate;
+    } catch {
+      // فشل، جرب الرابط التالي
+      continue;
+    }
+  }
+  return null;
 }
 
 async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null> {
@@ -210,94 +242,105 @@ interface MediaRendererProps {
   url?: string;
   alt?: string;
   videoAspect?: VideoAspect;
-  // متغيرات إضافية للتحكم بحجم الأيقونات (اختيارية)
-  controlSize?: 'small' | 'medium' | 'large';
 }
 
-export function MediaRenderer({ url, alt = "", videoAspect = "auto", controlSize = "medium" }: MediaRendererProps) {
+export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRendererProps) {
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [playerReady, setPlayerReady] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<Plyr | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
 
   // تحديد مصدر المحتوى
   useEffect(() => {
-    setVideoSrc(null);
-    setError(false);
-    setPlayerReady(false);
-    if (!url) return;
+    let isMounted = true;
+    const processUrl = async () => {
+      setVideoSrc(null);
+      setError(false);
+      setPlayerReady(false);
+      if (!url) return;
 
-    const ytId = getYouTubeId(url);
-    if (ytId) {
-      setVideoSrc(`https://www.youtube.com/embed/${ytId}`);
-      setPlayerReady(true);
-      return;
-    }
-
-    if (isGoogleDriveUrl(url)) {
-      const embedUrl = getGoogleDriveEmbedUrl(url);
-      if (embedUrl) {
-        setVideoSrc(embedUrl);
+      // 1. YouTube
+      const ytId = getYouTubeId(url);
+      if (ytId) {
+        setVideoSrc(`https://www.youtube.com/embed/${ytId}`);
         setPlayerReady(true);
         return;
-      } else {
+      }
+
+      // 2. Google Drive - نحاول الحصول على رابط مباشر
+      if (isGoogleDriveUrl(url)) {
+        setLoading(true);
+        const directUrl = await getGoogleDriveDirectUrl(url);
+        if (directUrl && isMounted) {
+          setVideoSrc(directUrl);
+          setLoading(false);
+          return;
+        } else {
+          if (isMounted) setError(true);
+          setLoading(false);
+          return;
+        }
+      }
+
+      // 3. StreamTape
+      if (isStreamTapeUrl(url)) {
+        setLoading(true);
+        try {
+          const src = await getStreamTapeProxiedUrl(url);
+          if (src && isMounted) setVideoSrc(src);
+          else if (isMounted) setError(true);
+        } catch {
+          if (isMounted) setError(true);
+        } finally {
+          if (isMounted) setLoading(false);
+        }
+        return;
+      }
+
+      // 4. Terabox (غير مدعوم)
+      if (isTeraboxUrl(url)) {
         setError(true);
         return;
       }
-    }
 
-    if (isStreamTapeUrl(url)) {
-      setLoading(true);
-      getStreamTapeProxiedUrl(url)
-        .then(src => src ? setVideoSrc(src) : setError(true))
-        .catch(() => setError(true))
-        .finally(() => setLoading(false));
-      return;
-    }
+      // 5. روابط مباشرة للفيديو
+      if (/\.(mp4|webm|mov|ogg)/i.test(url)) {
+        setVideoSrc(url);
+        return;
+      }
 
-    if (isTeraboxUrl(url)) {
+      // 6. صور
+      if (/\.(jpg|jpeg|png|gif|webp|avif)/i.test(url)) {
+        setVideoSrc(url);
+        return;
+      }
+
       setError(true);
-      return;
-    }
-
-    if (/\.(mp4|webm|mov|ogg)/i.test(url)) {
-      setVideoSrc(url);
-      return;
-    }
-
-    if (/\.(jpg|jpeg|png|gif|webp|avif)/i.test(url)) {
-      setVideoSrc(url);
-      return;
-    }
-
-    setError(true);
+    };
+    processUrl();
+    return () => { isMounted = false; };
   }, [url]);
 
-  // تهيئة Plyr للفيديو المباشر فقط (وليس YouTube أو Drive iframe)
+  // تهيئة Plyr للفيديو المباشر (وليس YouTube iframe)
   useEffect(() => {
     if (!videoRef.current) return;
     if (!videoSrc) return;
-    if (videoSrc.includes('youtube.com/embed') || videoSrc.includes('drive.google.com/file/d/')) return;
+    if (videoSrc.includes('youtube.com/embed')) return; // YouTube نعرضه بـ iframe منفصل
 
     if (playerRef.current) playerRef.current.destroy();
 
-    // تحديد قائمة الأزرار حسب الوضع (رأسي/أفقي)
-    const isPortrait = videoAspect === "portrait";
-    const controlsList = isPortrait
-      ? ["play-large", "play", "progress", "current-time", "duration", "mute", "volume", "fullscreen"]
-      : ["play-large", "play", "progress", "current-time", "duration", "mute", "volume", "captions", "settings", "pip", "airplay", "fullscreen"];
-
     const initializePlayer = () => {
       if (!videoRef.current) return;
+      // اختيار الأزرار حسب وضع الفيديو (رأسي/أفقي)
+      const isPortrait = videoAspect === "portrait";
+      const controlsList = isPortrait
+        ? ["play-large", "play", "progress", "current-time", "duration", "mute", "fullscreen"]
+        : ["play-large", "play", "progress", "current-time", "duration", "mute", "volume", "captions", "settings", "pip", "airplay", "fullscreen"];
+
       playerRef.current = new Plyr(videoRef.current, {
         controls: controlsList,
-        customClass: {
-          controls: 'plyr__controls',
-          video: isPortrait ? 'plyr--portrait' : 'plyr--landscape',
-        },
         disableContextMenu: true,
         seekTime: 10,
         speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
@@ -317,31 +360,23 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto", controlSize
     if (videoRef.current) videoRef.current.currentTime = time;
   };
 
+  // حالات التحميل والخطأ
   if (loading) return <div className="p-8 text-center text-gold">جاري تجهيز الفيديو...</div>;
   if (error || !videoSrc) return <div className="p-8 text-center text-red-400">لا يمكن عرض المحتوى. <a href={url} target="_blank" rel="noopener noreferrer" className="underline">فتح الرابط ↗</a></div>;
 
-  // دالة مساعدة لتطبيق videoAspect على iframe (YouTube/Drive)
-  const getIframeContainerStyle = (): React.CSSProperties => {
-    if (videoAspect === "landscape") return { aspectRatio: '16/9', width: '100%', position: 'relative' };
-    if (videoAspect === "portrait") return { aspectRatio: '9/16', maxHeight: '80vh', width: 'auto', margin: '0 auto', position: 'relative' };
-    return { display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '200px', height: '80vh' };
-  };
+  // YouTube (iframe)
+  if (videoSrc.includes('youtube.com/embed')) {
+    let containerStyle: React.CSSProperties = {};
+    if (videoAspect === "landscape") containerStyle = { aspectRatio: '16/9' };
+    else if (videoAspect === "portrait") containerStyle = { aspectRatio: '9/16', maxHeight: '80vh', width: 'auto', margin: '0 auto' };
+    else containerStyle = { display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '200px', height: '80vh' };
 
-  const getIframeStyle = (): React.CSSProperties => {
-    if (videoAspect === "landscape" || videoAspect === "portrait") return { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' };
-    return { width: 'auto', height: '100%', border: 0 };
-  };
-
-  // YouTube أو Google Drive iframe
-  if (videoSrc.includes('youtube.com/embed') || videoSrc.includes('drive.google.com/file/d/')) {
-    const containerStyle = getIframeContainerStyle();
-    const iframeStyle = getIframeStyle();
     return (
       <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
         <div style={containerStyle} className="w-full">
           <iframe
             src={videoSrc}
-            style={iframeStyle}
+            style={{ width: '100%', height: '100%', border: 0 }}
             allowFullScreen
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           />
@@ -355,11 +390,8 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto", controlSize
     return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/20" />;
   }
 
-  // الفيديو المباشر (StreamTape، MP4، إلخ) مع تحكم كامل بالأيقونات عبر CSS Variables
+  // الفيديو المباشر (بما في ذلك Google Drive الآن!)
   const isPortrait = videoAspect === "portrait";
-  const containerClass = isPortrait ? "portrait-mode" : "landscape-mode";
-  const sizeClass = controlSize === "small" ? "ctrl-small" : controlSize === "large" ? "ctrl-large" : "ctrl-medium";
-
   let containerStyle: React.CSSProperties = { display: 'flex', justifyContent: 'center' };
   let videoStyle: React.CSSProperties = { display: 'block', objectFit: 'contain', maxWidth: '100%', maxHeight: '80vh' };
 
@@ -372,7 +404,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto", controlSize
   }
 
   return (
-    <div className={`w-full bg-black rounded-lg border border-gold/20 overflow-hidden ${containerClass} ${sizeClass}`} ref={containerRef}>
+    <div className={`w-full bg-black rounded-lg border border-gold/20 overflow-hidden ${isPortrait ? 'portrait-mode' : 'landscape-mode'}`}>
       <div style={containerStyle} className="w-full">
         <video
           ref={videoRef}
@@ -394,9 +426,26 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto", controlSize
           />
         </div>
       )}
-
       <style jsx>{`
-
+        /* تخصيص أزرار Plyr في الوضع الرأسي */
+        .portrait-mode :global(.plyr__controls) {
+          display: flex;
+          flex-wrap: wrap;
+          justify-content: center;
+          gap: 8px;
+          padding: 6px;
+        }
+        @media (max-width: 480px) {
+          .portrait-mode :global(.plyr__controls) {
+            overflow-x: auto;
+            flex-wrap: nowrap;
+            justify-content: flex-start;
+          }
+        }
+        :global(.plyr__controls) {
+          background: rgba(0, 0, 0, 0.7);
+          backdrop-filter: blur(4px);
+        }
       `}</style>
     </div>
   );
