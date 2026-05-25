@@ -35,9 +35,8 @@ function isGoogleDriveUrl(url: string): boolean {
 function getGoogleDriveEmbedUrl(url: string): string | null {
   let fileId: string | null = null;
   const matchFile = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
-  if (matchFile) {
-    fileId = matchFile[1];
-  } else {
+  if (matchFile) fileId = matchFile[1];
+  else {
     const matchOpen = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
     if (matchOpen) fileId = matchOpen[1];
   }
@@ -206,14 +205,16 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   );
 }
 
-// ------------------- المكون الرئيسي مع دعم المرونة في أزرار التحكم -------------------
+// ------------------- المكون الرئيسي -------------------
 interface MediaRendererProps {
   url?: string;
   alt?: string;
   videoAspect?: VideoAspect;
+  // متغيرات إضافية للتحكم بحجم الأيقونات (اختيارية)
+  controlSize?: 'small' | 'medium' | 'large';
 }
 
-export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRendererProps) {
+export function MediaRenderer({ url, alt = "", videoAspect = "auto", controlSize = "medium" }: MediaRendererProps) {
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
@@ -275,7 +276,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
     setError(true);
   }, [url]);
 
-  // تهيئة Plyr للفيديو المباشر فقط
+  // تهيئة Plyr للفيديو المباشر فقط (وليس YouTube أو Drive iframe)
   useEffect(() => {
     if (!videoRef.current) return;
     if (!videoSrc) return;
@@ -283,13 +284,20 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
 
     if (playerRef.current) playerRef.current.destroy();
 
+    // تحديد قائمة الأزرار حسب الوضع (رأسي/أفقي)
+    const isPortrait = videoAspect === "portrait";
+    const controlsList = isPortrait
+      ? ["play-large", "play", "progress", "current-time", "duration", "mute", "volume", "fullscreen"]
+      : ["play-large", "play", "progress", "current-time", "duration", "mute", "volume", "captions", "settings", "pip", "airplay", "fullscreen"];
+
     const initializePlayer = () => {
       if (!videoRef.current) return;
       playerRef.current = new Plyr(videoRef.current, {
-        controls: [
-          "play-large", "play", "progress", "current-time", "duration",
-          "mute", "volume", "captions", "settings", "pip", "airplay", "fullscreen"
-        ],
+        controls: controlsList,
+        customClass: {
+          controls: 'plyr__controls',
+          video: isPortrait ? 'plyr--portrait' : 'plyr--landscape',
+        },
         disableContextMenu: true,
         seekTime: 10,
         speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
@@ -303,7 +311,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
     else videoRef.current.addEventListener('loadedmetadata', initializePlayer, { once: true });
 
     return () => { playerRef.current?.destroy(); playerRef.current = null; setPlayerReady(false); };
-  }, [videoSrc]);
+  }, [videoSrc, videoAspect]);
 
   const handleSeek = (time: number) => {
     if (videoRef.current) videoRef.current.currentTime = time;
@@ -312,7 +320,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
   if (loading) return <div className="p-8 text-center text-gold">جاري تجهيز الفيديو...</div>;
   if (error || !videoSrc) return <div className="p-8 text-center text-red-400">لا يمكن عرض المحتوى. <a href={url} target="_blank" rel="noopener noreferrer" className="underline">فتح الرابط ↗</a></div>;
 
-  // دالة مساعدة لتطبيق videoAspect على iframe
+  // دالة مساعدة لتطبيق videoAspect على iframe (YouTube/Drive)
   const getIframeContainerStyle = (): React.CSSProperties => {
     if (videoAspect === "landscape") return { aspectRatio: '16/9', width: '100%', position: 'relative' };
     if (videoAspect === "portrait") return { aspectRatio: '9/16', maxHeight: '80vh', width: 'auto', margin: '0 auto', position: 'relative' };
@@ -347,9 +355,10 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
     return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/20" />;
   }
 
-  // الفيديو المباشر مع شريط تحكم مرن
+  // الفيديو المباشر (StreamTape، MP4، إلخ) مع تحكم كامل بالأيقونات عبر CSS Variables
   const isPortrait = videoAspect === "portrait";
   const containerClass = isPortrait ? "portrait-mode" : "landscape-mode";
+  const sizeClass = controlSize === "small" ? "ctrl-small" : controlSize === "large" ? "ctrl-large" : "ctrl-medium";
 
   let containerStyle: React.CSSProperties = { display: 'flex', justifyContent: 'center' };
   let videoStyle: React.CSSProperties = { display: 'block', objectFit: 'contain', maxWidth: '100%', maxHeight: '80vh' };
@@ -363,7 +372,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
   }
 
   return (
-    <div className={`w-full bg-black rounded-lg border border-gold/20 overflow-hidden ${containerClass}`}>
+    <div className={`w-full bg-black rounded-lg border border-gold/20 overflow-hidden ${containerClass} ${sizeClass}`} ref={containerRef}>
       <div style={containerStyle} className="w-full">
         <video
           ref={videoRef}
@@ -387,42 +396,60 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
       )}
 
       <style jsx>{`
-        /* تحسين مظهر أزرار التحكم في الوضع الطولي (Portrait) */
-        .portrait-mode :global(.plyr__controls) {
+        /* CSS Variables للتحكم بحجم الأيقونات والمسافات */
+        .ctrl-small {
+          --plyr-control-icon-size: 32px;
+          --plyr-control-spacing: 8px;
+          --plyr-control-padding: 6px;
+        }
+        .ctrl-medium {
+          --plyr-control-icon-size: 44px;
+          --plyr-control-spacing: 10px;
+          --plyr-control-padding: 8px;
+        }
+        .ctrl-large {
+          --plyr-control-icon-size: 56px;
+          --plyr-control-spacing: 12px;
+          --plyr-control-padding: 10px;
+        }
+
+        /* تنسيق شريط التحكم الأساسي */
+        .plyr__controls {
+          background: rgba(0, 0, 0, 0.7);
+          backdrop-filter: blur(4px);
           display: flex;
           flex-wrap: wrap;
           justify-content: center;
-          gap: 0.25rem;
-          padding: 0.5rem;
-          font-size: 0.75rem;
+          gap: var(--plyr-control-spacing, 10px);
+          padding: var(--plyr-control-padding, 8px);
         }
-        .portrait-mode :global(.plyr__controls button) {
-          transform: scale(0.9);
+        .plyr__control {
+          transition: transform 0.1s ease;
         }
-        .portrait-mode :global(.plyr__progress) {
-          flex: 2;
-          min-width: 80px;
+        .plyr__control:hover {
+          transform: scale(1.05);
         }
-        /* في حالة عدم اتساع الشريط، نجعله قابل للتمرير */
-        .portrait-mode :global(.plyr__controls) {
-          overflow-x: auto;
-          white-space: nowrap;
-          flex-wrap: nowrap;
-          justify-content: flex-start;
-        }
-        /* الوضع الأفقي (عادي) */
-        .landscape-mode :global(.plyr__controls) {
+        /* وضع portrait (فيديو طويل) */
+        .portrait-mode .plyr__controls {
           flex-wrap: wrap;
-          gap: 0.5rem;
+          gap: calc(var(--plyr-control-spacing, 10px) * 0.8);
+          justify-content: space-evenly;
         }
-        /* تنسيق عام */
-        :global(.plyr__controls) {
-          background: rgba(0, 0, 0, 0.7);
-          backdrop-filter: blur(4px);
+        /* في حالة ضيق الشاشة نسمح بالتمرير الأفقي */
+        @media (max-width: 480px) {
+          .portrait-mode .plyr__controls {
+            overflow-x: auto;
+            flex-wrap: nowrap;
+            justify-content: flex-start;
+            padding: 6px;
+          }
         }
-        :global(.plyr__control--overlaid) {
-          background: rgba(0, 0, 0, 0.6);
-          backdrop-filter: blur(2px);
+        /* تكبير أزرار اللمس */
+        @media (hover: none) {
+          .plyr__control {
+            min-width: 44px;
+            min-height: 44px;
+          }
         }
       `}</style>
     </div>
