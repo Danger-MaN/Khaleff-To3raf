@@ -57,7 +57,7 @@ async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null>
   }
 }
 
-// ------------------- مكون عرض اللقطات (كما هو دون تغيير) -------------------
+// ------------------- مكون عرض اللقطات (ThumbnailStrip) -------------------
 interface ThumbnailStripProps {
   videoElement: HTMLVideoElement | null;
   onSeek: (time: number) => void;
@@ -206,7 +206,7 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   );
 }
 
-// ------------------- المكون الرئيسي المعدل -------------------
+// ------------------- المكون الرئيسي مع دعم المرونة في أزرار التحكم -------------------
 interface MediaRendererProps {
   url?: string;
   alt?: string;
@@ -220,7 +220,9 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
   const [playerReady, setPlayerReady] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<Plyr | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
+  // تحديد مصدر المحتوى
   useEffect(() => {
     setVideoSrc(null);
     setError(false);
@@ -238,7 +240,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
       const embedUrl = getGoogleDriveEmbedUrl(url);
       if (embedUrl) {
         setVideoSrc(embedUrl);
-        setPlayerReady(true); // iframe جاهز بدون Plyr
+        setPlayerReady(true);
         return;
       } else {
         setError(true);
@@ -273,7 +275,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
     setError(true);
   }, [url]);
 
-  // تهيئة Plyr للفيديو المباشر فقط (وليس YouTube أو Drive iframe)
+  // تهيئة Plyr للفيديو المباشر فقط
   useEffect(() => {
     if (!videoRef.current) return;
     if (!videoSrc) return;
@@ -284,7 +286,10 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
     const initializePlayer = () => {
       if (!videoRef.current) return;
       playerRef.current = new Plyr(videoRef.current, {
-        controls: ["play-large", "play", "progress", "current-time", "duration", "mute", "captions", "settings", "pip", "airplay", "fullscreen"],
+        controls: [
+          "play-large", "play", "progress", "current-time", "duration",
+          "mute", "volume", "captions", "settings", "pip", "airplay", "fullscreen"
+        ],
         disableContextMenu: true,
         seekTime: 10,
         speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
@@ -342,7 +347,10 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
     return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/20" />;
   }
 
-  // الفيديو المباشر (بما في ذلك StreamTape)
+  // الفيديو المباشر مع شريط تحكم مرن
+  const isPortrait = videoAspect === "portrait";
+  const containerClass = isPortrait ? "portrait-mode" : "landscape-mode";
+
   let containerStyle: React.CSSProperties = { display: 'flex', justifyContent: 'center' };
   let videoStyle: React.CSSProperties = { display: 'block', objectFit: 'contain', maxWidth: '100%', maxHeight: '80vh' };
 
@@ -355,7 +363,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
   }
 
   return (
-    <div className="w-full bg-black rounded-lg border border-gold/20 overflow-hidden">
+    <div className={`w-full bg-black rounded-lg border border-gold/20 overflow-hidden ${containerClass}`}>
       <div style={containerStyle} className="w-full">
         <video
           ref={videoRef}
@@ -377,6 +385,46 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
           />
         </div>
       )}
+
+      <style jsx>{`
+        /* تحسين مظهر أزرار التحكم في الوضع الطولي (Portrait) */
+        .portrait-mode :global(.plyr__controls) {
+          display: flex;
+          flex-wrap: wrap;
+          justify-content: center;
+          gap: 0.25rem;
+          padding: 0.5rem;
+          font-size: 0.75rem;
+        }
+        .portrait-mode :global(.plyr__controls button) {
+          transform: scale(0.9);
+        }
+        .portrait-mode :global(.plyr__progress) {
+          flex: 2;
+          min-width: 80px;
+        }
+        /* في حالة عدم اتساع الشريط، نجعله قابل للتمرير */
+        .portrait-mode :global(.plyr__controls) {
+          overflow-x: auto;
+          white-space: nowrap;
+          flex-wrap: nowrap;
+          justify-content: flex-start;
+        }
+        /* الوضع الأفقي (عادي) */
+        .landscape-mode :global(.plyr__controls) {
+          flex-wrap: wrap;
+          gap: 0.5rem;
+        }
+        /* تنسيق عام */
+        :global(.plyr__controls) {
+          background: rgba(0, 0, 0, 0.7);
+          backdrop-filter: blur(4px);
+        }
+        :global(.plyr__control--overlaid) {
+          background: rgba(0, 0, 0, 0.6);
+          backdrop-filter: blur(2px);
+        }
+      `}</style>
     </div>
   );
 }
