@@ -141,12 +141,16 @@
   .border-gold { border-color: var(--gold); }
   .gradient-gold { background: var(--gradient-gold, linear-gradient(135deg, var(--gold), color-mix(in oklab, var(--gold) 60%, white))); }
   .gradient-gold-text {
-    background: linear-gradient(120deg, #d4af37 0%, #f5e7a3 50%, #d4af37 100%);
+    background: linear-gradient(135deg, var(--gold) 0%, color-mix(in oklab, var(--gold) 70%, white) 50%, var(--gold) 100%);
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
+    /* الخصائص الجديدة لحل مشكلة قطع الحروف */
     display: inline-block;
-    isolation: isolate;
+    text-rendering: geometricPrecision;
+    -webkit-font-smoothing: antialiased;
+    font-kerning: normal;
+    letter-spacing: 0 !important;
   }
   .shadow-mystic { box-shadow: var(--shadow-mystic); }
 
