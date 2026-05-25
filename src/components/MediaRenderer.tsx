@@ -122,7 +122,7 @@ interface ThumbnailStripProps {
   isVisible?: boolean;
 }
 
-const SEEK_INTERVAL_MS = 3000;
+const SEEK_INTERVAL_MS = 1250;
 const THUMBNAIL_COUNT = 10;
 
 function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStripProps) {
@@ -451,7 +451,7 @@ function DirectVideoPlayer({ src, videoAspect }: DirectVideoPlayerProps) {
       const isPortrait = videoAspect === "portrait";
       const controlsList = isPortrait
         ? ["play-large", "play", "progress", "current-time", "duration", "mute", "fullscreen"]
-        : ["play-large", "play", "progress", "current-time", "duration", "mute", "volume", "captions", "settings", "pip", "airplay", "fullscreen"];
+        : ["play-large", "play", "progress", "current-time", "duration", "mute", "captions", "settings", "pip", "airplay", "fullscreen"];
 
       playerRef.current = new Plyr(videoRef.current, {
         controls: controlsList,
