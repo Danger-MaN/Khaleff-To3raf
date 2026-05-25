@@ -32,41 +32,17 @@ function isGoogleDriveUrl(url: string): boolean {
   return /drive\.google\.com\/(file\/d\/|open\?id=)/i.test(url);
 }
 
-// استخراج معرف الملف من رابط Google Drive
-function getGoogleDriveFileId(url: string): string | null {
+function getGoogleDriveEmbedUrl(url: string): string | null {
+  let fileId: string | null = null;
   const matchFile = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
-  if (matchFile) return matchFile[1];
-  const matchOpen = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-  if (matchOpen) return matchOpen[1];
-  return null;
-}
-
-// محاولة الحصول على رابط تشغيل مباشر من Google Drive (تجربة عدة صيغ)
-async function getGoogleDrivePlayableUrl(url: string): Promise<string | null> {
-  const fileId = getGoogleDriveFileId(url);
-  if (!fileId) return null;
-
-  // قائمة بالروابط المحتملة
-  const candidates = [
-    `https://drive.usercontent.google.com/download?id=${fileId}&export=download&confirm=t`, // الأفضل حالياً
-    `https://drive.usercontent.google.com/download?id=${fileId}&export=download`,           // بدون confirm
-    `https://drive.google.com/uc?export=download&id=${fileId}`,                            // قد يعرض صفحة تحذير
-    `https://drive.google.com/uc?export=view&id=${fileId}`,                                // للعرض المباشر
-  ];
-
-  for (const candidate of candidates) {
-    try {
-      // نرسل طلب HEAD للتحقق من إمكانية الوصول
-      const res = await fetch(candidate, { method: 'HEAD', mode: 'no-cors' });
-      // بسبب no-cors لا يمكننا قراءة الرد، لكننا نجرب الرابط
-      // إذا لم يرمِ استثناء، نعتبره صالحاً
-      return candidate;
-    } catch {
-      continue;
-    }
+  if (matchFile) {
+    fileId = matchFile[1];
+  } else {
+    const matchOpen = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if (matchOpen) fileId = matchOpen[1];
   }
-  // إذا فشل كل شيء، نعيد الرابط الأول كآخر أمل
-  return candidates[0];
+  if (!fileId) return null;
+  return `https://drive.google.com/file/d/${fileId}/preview`;
 }
 
 async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null> {
@@ -81,7 +57,7 @@ async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null>
   }
 }
 
-// ------------------- مكون عرض اللقطات (بدون تغيير) -------------------
+// ------------------- مكون عرض اللقطات (كما هو دون تغيير) -------------------
 interface ThumbnailStripProps {
   videoElement: HTMLVideoElement | null;
   onSeek: (time: number) => void;
@@ -230,7 +206,7 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
   );
 }
 
-// ------------------- المكون الرئيسي -------------------
+// ------------------- المكون الرئيسي المعدل -------------------
 interface MediaRendererProps {
   url?: string;
   alt?: string;
@@ -258,20 +234,16 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
       return;
     }
 
-    // Google Drive: نحاول الحصول على رابط تشغيل مباشر
     if (isGoogleDriveUrl(url)) {
-      setLoading(true);
-      getGoogleDrivePlayableUrl(url)
-        .then(directUrl => {
-          if (directUrl) {
-            setVideoSrc(directUrl);
-          } else {
-            setError(true);
-          }
-        })
-        .catch(() => setError(true))
-        .finally(() => setLoading(false));
-      return;
+      const embedUrl = getGoogleDriveEmbedUrl(url);
+      if (embedUrl) {
+        setVideoSrc(embedUrl);
+        setPlayerReady(true); // iframe جاهز بدون Plyr
+        return;
+      } else {
+        setError(true);
+        return;
+      }
     }
 
     if (isStreamTapeUrl(url)) {
@@ -301,11 +273,11 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
     setError(true);
   }, [url]);
 
-  // تهيئة Plyr للفيديو المباشر فقط (وليس YouTube iframe)
+  // تهيئة Plyr للفيديو المباشر فقط (وليس YouTube أو Drive iframe)
   useEffect(() => {
     if (!videoRef.current) return;
     if (!videoSrc) return;
-    if (videoSrc.includes('youtube.com/embed')) return;
+    if (videoSrc.includes('youtube.com/embed') || videoSrc.includes('drive.google.com/file/d/')) return;
 
     if (playerRef.current) playerRef.current.destroy();
 
@@ -335,14 +307,28 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
   if (loading) return <div className="p-8 text-center text-gold">جاري تجهيز الفيديو...</div>;
   if (error || !videoSrc) return <div className="p-8 text-center text-red-400">لا يمكن عرض المحتوى. <a href={url} target="_blank" rel="noopener noreferrer" className="underline">فتح الرابط ↗</a></div>;
 
-  // YouTube فقط (iframe)
-  if (videoSrc.includes('youtube.com/embed')) {
+  // دالة مساعدة لتطبيق videoAspect على iframe
+  const getIframeContainerStyle = (): React.CSSProperties => {
+    if (videoAspect === "landscape") return { aspectRatio: '16/9', width: '100%', position: 'relative' };
+    if (videoAspect === "portrait") return { aspectRatio: '9/16', maxHeight: '80vh', width: 'auto', margin: '0 auto', position: 'relative' };
+    return { display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '200px', height: '80vh' };
+  };
+
+  const getIframeStyle = (): React.CSSProperties => {
+    if (videoAspect === "landscape" || videoAspect === "portrait") return { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' };
+    return { width: 'auto', height: '100%', border: 0 };
+  };
+
+  // YouTube أو Google Drive iframe
+  if (videoSrc.includes('youtube.com/embed') || videoSrc.includes('drive.google.com/file/d/')) {
+    const containerStyle = getIframeContainerStyle();
+    const iframeStyle = getIframeStyle();
     return (
       <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
-        <div className="relative w-full" style={{ aspectRatio: '16/9' }}>
+        <div style={containerStyle} className="w-full">
           <iframe
             src={videoSrc}
-            className="absolute inset-0 w-full h-full"
+            style={iframeStyle}
             allowFullScreen
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           />
@@ -356,7 +342,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
     return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/20" />;
   }
 
-  // تحديد نمط الحاوية بناءً على videoAspect
+  // الفيديو المباشر (بما في ذلك StreamTape)
   let containerStyle: React.CSSProperties = { display: 'flex', justifyContent: 'center' };
   let videoStyle: React.CSSProperties = { display: 'block', objectFit: 'contain', maxWidth: '100%', maxHeight: '80vh' };
 
@@ -366,13 +352,8 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
   } else if (videoAspect === "portrait") {
     containerStyle = { aspectRatio: '9/16', maxHeight: '80vh', width: 'auto', margin: '0 auto' };
     videoStyle = { width: '100%', height: '100%', objectFit: 'contain' };
-  } else {
-    // auto
-    containerStyle = { display: 'flex', justifyContent: 'center' };
-    videoStyle = { display: 'block', width: 'auto', height: 'auto', maxWidth: '100%', maxHeight: '80vh', objectFit: 'contain' };
   }
 
-  // الفيديو المباشر (StreamTape، Drive، mp4، إلخ)
   return (
     <div className="w-full bg-black rounded-lg border border-gold/20 overflow-hidden">
       <div style={containerStyle} className="w-full">
