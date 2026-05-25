@@ -32,19 +32,41 @@ function isGoogleDriveUrl(url: string): boolean {
   return /drive\.google\.com\/(file\/d\/|open\?id=)/i.test(url);
 }
 
-// استخراج رابط مباشر من Google Drive (للتشغيل في Plyr)
-function getGoogleDriveDirectUrl(url: string): string | null {
-  let fileId: string | null = null;
+// استخراج معرف الملف من رابط Google Drive
+function getGoogleDriveFileId(url: string): string | null {
   const matchFile = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
-  if (matchFile) {
-    fileId = matchFile[1];
-  } else {
-    const matchOpen = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-    if (matchOpen) fileId = matchOpen[1];
-  }
+  if (matchFile) return matchFile[1];
+  const matchOpen = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (matchOpen) return matchOpen[1];
+  return null;
+}
+
+// محاولة الحصول على رابط تشغيل مباشر من Google Drive (تجربة عدة صيغ)
+async function getGoogleDrivePlayableUrl(url: string): Promise<string | null> {
+  const fileId = getGoogleDriveFileId(url);
   if (!fileId) return null;
-  // رابط التشغيل المباشر (بدون iframe)
-  return `https://drive.google.com/uc?export=download&id=${fileId}`;
+
+  // قائمة بالروابط المحتملة
+  const candidates = [
+    `https://drive.usercontent.google.com/download?id=${fileId}&export=download&confirm=t`, // الأفضل حالياً
+    `https://drive.usercontent.google.com/download?id=${fileId}&export=download`,           // بدون confirm
+    `https://drive.google.com/uc?export=download&id=${fileId}`,                            // قد يعرض صفحة تحذير
+    `https://drive.google.com/uc?export=view&id=${fileId}`,                                // للعرض المباشر
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      // نرسل طلب HEAD للتحقق من إمكانية الوصول
+      const res = await fetch(candidate, { method: 'HEAD', mode: 'no-cors' });
+      // بسبب no-cors لا يمكننا قراءة الرد، لكننا نجرب الرابط
+      // إذا لم يرمِ استثناء، نعتبره صالحاً
+      return candidate;
+    } catch {
+      continue;
+    }
+  }
+  // إذا فشل كل شيء، نعيد الرابط الأول كآخر أمل
+  return candidates[0];
 }
 
 async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null> {
@@ -59,7 +81,7 @@ async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null>
   }
 }
 
-// ------------------- مكون عرض اللقطات (الكامل الذي كان يعمل) -------------------
+// ------------------- مكون عرض اللقطات (بدون تغيير) -------------------
 interface ThumbnailStripProps {
   videoElement: HTMLVideoElement | null;
   onSeek: (time: number) => void;
@@ -236,16 +258,20 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
       return;
     }
 
-    // Google Drive: نحاول الحصول على رابط مباشر (لـ Plyr) وليس iframe
+    // Google Drive: نحاول الحصول على رابط تشغيل مباشر
     if (isGoogleDriveUrl(url)) {
-      const directUrl = getGoogleDriveDirectUrl(url);
-      if (directUrl) {
-        setVideoSrc(directUrl);
-        return;
-      } else {
-        setError(true);
-        return;
-      }
+      setLoading(true);
+      getGoogleDrivePlayableUrl(url)
+        .then(directUrl => {
+          if (directUrl) {
+            setVideoSrc(directUrl);
+          } else {
+            setError(true);
+          }
+        })
+        .catch(() => setError(true))
+        .finally(() => setLoading(false));
+      return;
     }
 
     if (isStreamTapeUrl(url)) {
