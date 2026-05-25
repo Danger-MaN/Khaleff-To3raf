@@ -322,6 +322,7 @@ function GoogleDriveIframe({ embedUrl, videoAspect, isPreview = false }: { embed
           className="w-full h-full border-0"
           allowFullScreen
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-modals"
         />
       </div>
     </div>
