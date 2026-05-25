@@ -414,43 +414,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto", controlSize
         }
 
         /* تنسيق شريط التحكم الأساسي */
-        .plyr__controls {
-          background: rgba(0, 0, 0, 0.7);
-          backdrop-filter: blur(4px);
-          display: flex;
-          flex-wrap: wrap;
-          justify-content: center;
-          gap: var(--plyr-control-spacing, 10px);
-          padding: var(--plyr-control-padding, 8px);
-        }
-        .plyr__control {
-          transition: transform 0.1s ease;
-        }
-        .plyr__control:hover {
-          transform: scale(1.05);
-        }
-        /* وضع portrait (فيديو طويل) */
-        .portrait-mode .plyr__controls {
-          flex-wrap: wrap;
-          gap: calc(var(--plyr-control-spacing, 10px) * 0.8);
-          justify-content: space-evenly;
-        }
-        /* في حالة ضيق الشاشة نسمح بالتمرير الأفقي */
-        @media (max-width: 480px) {
-          .portrait-mode .plyr__controls {
-            overflow-x: auto;
-            flex-wrap: nowrap;
-            justify-content: flex-start;
-            padding: 6px;
-          }
-        }
-        /* تكبير أزرار اللمس */
-        @media (hover: none) {
-          .plyr__control {
-            min-width: 44px;
-            min-height: 44px;
-          }
-        }
+
       `}</style>
     </div>
   );
