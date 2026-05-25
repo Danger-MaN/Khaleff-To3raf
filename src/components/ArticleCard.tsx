@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { type Article } from "@/lib/articles";
 import { categoryLabel } from "@/lib/categories";
 import { MediaRenderer } from "./MediaRenderer";
-import { TranslatedText } from "./TranslatedText"; // أضف هذا الاستيراد
+import { TranslatedText } from "./TranslatedText";
 
 const CATEGORY_ACCENT: Record<string, string> = {
   philosophy: "from-indigo-500/40 via-gold/30 to-transparent",
@@ -33,8 +33,6 @@ export function ArticleCard({ article, index = 0 }: { article: Article; index?: 
 
   const featured = index % 5 === 0;
 
-  // الحصول على اسم القسم المترجم (المفتاح categoryLabel يعيد النص المترجم بالفعل)
-  // ولكن إذا كان categoryLabel لا يترجم، نستخدم TranslatedText مباشرة
   const categoryDisplayName = categoryLabel(article.category, t);
 
   return (
@@ -67,7 +65,6 @@ export function ArticleCard({ article, index = 0 }: { article: Article; index?: 
       <div className="flex flex-col gap-3 p-6 flex-1">
         <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.3em]">
           <span className={`inline-block h-1.5 w-1.5 rounded-full ${dot}`} />
-          {/* استخدام TranslatedText لضمان الترجمة */}
           <span className="text-gold">
             <TranslatedText text={categoryDisplayName} />
           </span>
@@ -76,13 +73,13 @@ export function ArticleCard({ article, index = 0 }: { article: Article; index?: 
         <h3 className={`font-display leading-tight text-foreground group-hover:text-gold transition-colors ${
           featured ? "text-3xl md:text-4xl" : "text-2xl"
         }`}>
-          {title}
+          <TranslatedText text={title} />
         </h3>
 
         <div className="h-px w-12 bg-gold/40 group-hover:w-20 group-hover:bg-gold transition-all duration-500" />
 
         <p className={`text-sm text-muted-foreground leading-relaxed ${featured ? "line-clamp-4" : "line-clamp-3"}`}>
-          {excerpt}
+          <TranslatedText text={excerpt} />
         </p>
 
         <div className="mt-auto pt-3 text-xs uppercase tracking-widest text-gold/80 group-hover:text-gold flex items-center gap-2">
