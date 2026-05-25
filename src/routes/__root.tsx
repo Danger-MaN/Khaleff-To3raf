@@ -47,8 +47,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "خالف تُعرف — Khaleff To'raf" },
-      { name: "description", content: "منصة فكرية مُعاكسة للتيار: فلسفة، علم تجريبي، ثقافة جنسية." },
+      { title: "خالف تُعرف — Khaleff To3raf" },
+      { name: "description", content: "منصة فكرية ضد المألوف." },
       { property: "og:title", content: "خالف تُعرف" },
       { property: "og:description", content: "حيث تُكسر اليقينيات وتُولد الأسئلة." },
       { property: "og:type", content: "website" },
