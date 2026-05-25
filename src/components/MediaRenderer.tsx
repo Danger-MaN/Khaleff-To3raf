@@ -396,24 +396,6 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto", controlSize
       )}
 
       <style jsx>{`
-        /* CSS Variables للتحكم بحجم الأيقونات والمسافات */
-        .ctrl-small {
-          --plyr-control-icon-size: 32px;
-          --plyr-control-spacing: 8px;
-          --plyr-control-padding: 6px;
-        }
-        .ctrl-medium {
-          --plyr-control-icon-size: 44px;
-          --plyr-control-spacing: 10px;
-          --plyr-control-padding: 8px;
-        }
-        .ctrl-large {
-          --plyr-control-icon-size: 56px;
-          --plyr-control-spacing: 12px;
-          --plyr-control-padding: 10px;
-        }
-
-        /* تنسيق شريط التحكم الأساسي */
 
       `}</style>
     </div>
