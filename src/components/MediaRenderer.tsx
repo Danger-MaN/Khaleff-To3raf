@@ -113,8 +113,8 @@ function FacebookIframe({ embedUrl, videoAspect }: { embedUrl: string; videoAspe
     containerStyle = { aspectRatio: '16/9' };
   } else if (videoAspect === "portrait") {
     // وضع ريلز: حاوية بنسبة 9:16، والفيديو يملأها بالكامل
-    containerStyle = { aspectRatio: '9/16', maxHeight: '50vh', margin: '0 auto' };
-    iframeStyle = { width: '100%', height: '100%', border: 0 };
+    containerStyle = { aspectRatio: '9/16', maxHeight: '100vh', margin: '0 auto' };
+    iframeStyle = { width: '100%', height: '50%', border: 0 };
   } else {
     containerStyle = { width: '100%', height: 'auto', minHeight: '300px' };
   }
