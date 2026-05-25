@@ -158,7 +158,7 @@ interface ThumbnailStripProps {
   isVisible?: boolean;
 }
 
-const SEEK_INTERVAL_MS = 3000;
+const SEEK_INTERVAL_MS = 1250;
 const THUMBNAIL_COUNT = 10;
 
 function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStripProps) {
