@@ -55,12 +55,7 @@ export function ArticleCard({ article, index = 0 }: { article: Article; index?: 
       {article.mediaUrl && (
         <div className={`overflow-hidden relative ${featured ? "aspect-[21/9]" : "aspect-[16/10]"}`}>
           <div className="absolute inset-0 transition-transform duration-700 group-hover:scale-105">
-            <MediaRenderer 
-              url={article.mediaUrl} 
-              alt={title} 
-              videoAspect={article.videoAspect || "auto"}
-              isPreview={true}
-            />
+            <MediaRenderer url={article.mediaUrl} alt={title} />
           </div>
           <div className="absolute inset-0 bg-gradient-to-t from-card via-card/30 to-transparent opacity-80 pointer-events-none" />
         </div>
