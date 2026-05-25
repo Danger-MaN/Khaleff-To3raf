@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import type { VideoAspect } from "@/lib/articles";
 
 // ------------------- دوال مساعدة -------------------
@@ -30,14 +30,13 @@ function isGoogleDriveUrl(url: string): boolean {
   return /drive\.google\.com\/(file\/d\/|open\?id=)/i.test(url);
 }
 
-// ------------------- دوال الفيسبوك -------------------
 function isFacebookVideoUrl(url: string): boolean {
   return /(facebook\.com.*\/videos\/|fb\.watch\/|facebook\.com\/watch\/\?v=)/i.test(url);
 }
 
 function getFacebookEmbedUrl(url: string): string | null {
   try {
-    // نمط 1: facebook.com/PAGE_ID/videos/VIDEO_ID
+    // نمط: facebook.com/PAGE_ID/videos/VIDEO_ID
     const videoMatch = url.match(/facebook\.com\/(?:[^\/]+\/)?videos\/(?:[^\/]+\/)?(\d+)/i);
     if (videoMatch && videoMatch[1]) {
       const videoId = videoMatch[1];
@@ -45,28 +44,23 @@ function getFacebookEmbedUrl(url: string): string | null {
       const pageId = pageMatch && pageMatch[1] !== 'videos' && pageMatch[1] !== 'watch' ? pageMatch[1] : 'facebook';
       return `https://www.facebook.com/plugins/video.php?href=https://www.facebook.com/${pageId}/videos/${videoId}/`;
     }
-
-    // نمط 2: facebook.com/watch/?v=VIDEO_ID
+    // نمط: facebook.com/watch/?v=VIDEO_ID
     const watchMatch = url.match(/facebook\.com\/watch\/\?v=(\d+)/i);
     if (watchMatch && watchMatch[1]) {
-      const videoId = watchMatch[1];
-      return `https://www.facebook.com/plugins/video.php?href=https://www.facebook.com/facebook/videos/${videoId}/`;
+      return `https://www.facebook.com/plugins/video.php?href=https://www.facebook.com/facebook/videos/${watchMatch[1]}/`;
     }
-
-    // نمط 3: fb.watch/xxxxx (روابط مختصرة)
+    // نمط مختصر: fb.watch/...
     const fbWatchMatch = url.match(/fb\.watch\/([a-zA-Z0-9]+)/i);
     if (fbWatchMatch) {
       return `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(url)}`;
     }
-
     return null;
   } catch (error) {
-    console.error("Error extracting Facebook video ID:", error);
+    console.error("Facebook embed error:", error);
     return null;
   }
 }
 
-// ------------------- دوال Google Drive -------------------
 function getGoogleDriveEmbedUrl(url: string): string | null {
   const matchFile = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
   if (matchFile) return `https://drive.google.com/file/d/${matchFile[1]}/preview`;
@@ -87,6 +81,79 @@ async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null>
   }
 }
 
+// ------------------- مكونات iframe منفصلة لكل منصة -------------------
+
+// 1. YouTube iframe
+function YouTubeIframe({ videoId, videoAspect }: { videoId: string; videoAspect: VideoAspect }) {
+  let containerStyle: React.CSSProperties = {};
+  if (videoAspect === "landscape") containerStyle = { aspectRatio: '16/9' };
+  else if (videoAspect === "portrait") containerStyle = { aspectRatio: '9/16', maxHeight: '80vh', margin: '0 auto' };
+  else containerStyle = { width: '100%', height: 'auto', minHeight: '300px' };
+
+  return (
+    <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
+      <div style={containerStyle}>
+        <iframe
+          src={`https://www.youtube.com/embed/${videoId}`}
+          className="w-full h-full border-0"
+          allowFullScreen
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+        />
+      </div>
+    </div>
+  );
+}
+
+// 2. Facebook iframe (مع تحسين الوضع الطولي)
+function FacebookIframe({ embedUrl, videoAspect }: { embedUrl: string; videoAspect: VideoAspect }) {
+  let containerStyle: React.CSSProperties = {};
+  let iframeStyle: React.CSSProperties = { width: '100%', height: '100%', border: 0 };
+
+  if (videoAspect === "landscape") {
+    containerStyle = { aspectRatio: '16/9' };
+  } else if (videoAspect === "portrait") {
+    // وضع ريلز: حاوية بنسبة 9:16، والفيديو يملأها بالكامل
+    containerStyle = { aspectRatio: '9/16', maxHeight: '80vh', margin: '0 auto' };
+    iframeStyle = { width: '100%', height: '100%', border: 0 };
+  } else {
+    containerStyle = { width: '100%', height: 'auto', minHeight: '300px' };
+  }
+
+  return (
+    <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
+      <div style={containerStyle}>
+        <iframe
+          src={embedUrl}
+          style={iframeStyle}
+          allowFullScreen
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+        />
+      </div>
+    </div>
+  );
+}
+
+// 3. Google Drive iframe
+function GoogleDriveIframe({ embedUrl, videoAspect }: { embedUrl: string; videoAspect: VideoAspect }) {
+  let containerStyle: React.CSSProperties = {};
+  if (videoAspect === "landscape") containerStyle = { aspectRatio: '16/9' };
+  else if (videoAspect === "portrait") containerStyle = { aspectRatio: '9/16', maxHeight: '80vh', margin: '0 auto' };
+  else containerStyle = { width: '100%', height: 'auto', minHeight: '300px' };
+
+  return (
+    <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
+      <div style={containerStyle}>
+        <iframe
+          src={embedUrl}
+          className="w-full h-full border-0"
+          allowFullScreen
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+        />
+      </div>
+    </div>
+  );
+}
+
 // ------------------- المكون الرئيسي -------------------
 interface MediaRendererProps {
   url?: string;
@@ -95,172 +162,116 @@ interface MediaRendererProps {
 }
 
 export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRendererProps) {
-  const [finalSrc, setFinalSrc] = useState<string | null>(null);
-  const [isIframe, setIsIframe] = useState(false);
+  const [type, setType] = useState<"youtube" | "facebook" | "googledrive" | "streamtape" | "video" | "image" | null>(null);
+  const [src, setSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
-  const [aspectRatio, setAspectRatio] = useState<number | null>(null); // لتخزين النسبة المستنتجة
-  const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  // تحديد مصدر المحتوى
   useEffect(() => {
     let mounted = true;
-    const load = async () => {
-      setFinalSrc(null);
-      setIsIframe(false);
+    const process = async () => {
+      setSrc(null);
+      setType(null);
       setError(false);
       if (!url) return;
 
-      // 1. YouTube
+      // YouTube
       const yt = getYouTubeId(url);
       if (yt) {
-        setFinalSrc(`https://www.youtube.com/embed/${yt}`);
-        setIsIframe(true);
+        setType("youtube");
+        setSrc(yt);
         return;
       }
 
-      // 2. Facebook Video
+      // Facebook
       if (isFacebookVideoUrl(url)) {
-        const embedUrl = getFacebookEmbedUrl(url);
-        if (embedUrl) {
-          setFinalSrc(embedUrl);
-          setIsIframe(true);
+        const embed = getFacebookEmbedUrl(url);
+        if (embed) {
+          setType("facebook");
+          setSrc(embed);
           return;
         }
-        // إذا فشل الاستخراج، نستمر لمعالجة الخيارات الأخرى
+        // إذا فشل، لا نعرض خطأ فوراً بل ننتقل للخيار التالي
       }
 
-      // 3. Google Drive
+      // Google Drive
       if (isGoogleDriveUrl(url)) {
-        const embedUrl = getGoogleDriveEmbedUrl(url);
-        if (embedUrl) {
-          setFinalSrc(embedUrl);
-          setIsIframe(true);
+        const embed = getGoogleDriveEmbedUrl(url);
+        if (embed) {
+          setType("googledrive");
+          setSrc(embed);
           return;
         }
         setError(true);
         return;
       }
 
-      // 4. StreamTape
+      // StreamTape
       if (isStreamTapeUrl(url)) {
         setLoading(true);
-        const src = await getStreamTapeProxiedUrl(url);
-        if (src && mounted) setFinalSrc(src);
-        else if (mounted) setError(true);
+        const proxy = await getStreamTapeProxiedUrl(url);
+        if (proxy && mounted) {
+          setType("streamtape");
+          setSrc(proxy);
+        } else if (mounted) setError(true);
         setLoading(false);
         return;
       }
 
-      // 5. Terabox (غير مدعوم)
+      // Terabox (غير مدعوم)
       if (isTeraboxUrl(url)) {
         setError(true);
         return;
       }
 
-      // 6. روابط مباشرة للفيديو
+      // روابط مباشرة
       if (/\.(mp4|webm|mov|ogg)$/i.test(url)) {
-        setFinalSrc(url);
+        setType("video");
+        setSrc(url);
         return;
       }
 
-      // 7. صور
+      // صور
       if (/\.(jpg|jpeg|png|gif|webp|avif)$/i.test(url)) {
-        setFinalSrc(url);
+        setType("image");
+        setSrc(url);
         return;
       }
 
       setError(true);
     };
-    load();
+    process();
     return () => { mounted = false; };
   }, [url]);
 
-  // استنتاج نسبة الأبعاد للـ iframe
-  useEffect(() => {
-    if (!isIframe || !iframeRef.current) return;
-
-    const handleLoad = () => {
-      try {
-        // محاولة قراءة نسبة الأبعاد من خصائص iframe أو محتواه
-        const iframe = iframeRef.current;
-        if (iframe && iframe.contentWindow && iframe.contentWindow.document) {
-          const videoElement = iframe.contentWindow.document.querySelector('video');
-          if (videoElement && videoElement.videoWidth && videoElement.videoHeight) {
-            const ratio = videoElement.videoWidth / videoElement.videoHeight;
-            setAspectRatio(ratio);
-            console.log(`Detected aspect ratio: ${ratio}`);
-          }
-        }
-      } catch (error) {
-        // تجاهل أخطاء CORS
-        console.log("Cannot access iframe content due to CORS policy.");
-      }
-    };
-
-    if (iframeRef.current.complete) {
-      handleLoad();
-    } else {
-      iframeRef.current.addEventListener('load', handleLoad);
-      return () => iframeRef.current?.removeEventListener('load', handleLoad);
-    }
-  }, [isIframe, finalSrc]);
-
   if (loading) return <div className="p-8 text-center text-gold">جاري التحميل...</div>;
-  if (error || !finalSrc) return <div className="p-8 text-center text-red-400">لا يمكن عرض المحتوى. <a href={url} target="_blank" rel="noopener noreferrer">فتح الرابط ↗</a></div>;
+  if (error || !src || !type) return <div className="p-8 text-center text-red-400">لا يمكن عرض المحتوى. <a href={url} target="_blank" rel="noopener noreferrer">فتح الرابط ↗</a></div>;
 
-  // --- iframe (YouTube, Facebook, Google Drive) ---
-  if (isIframe) {
-    let containerStyle: React.CSSProperties = {};
-    let effectiveAspectRatio = aspectRatio;
-
-    // إذا لم نتمكن من استنتاج النسبة، نستخدم نسبة معينة بناءً على الإعداد المختار
-    if (!effectiveAspectRatio) {
-      if (videoAspect === "landscape") effectiveAspectRatio = 16 / 9;
-      else if (videoAspect === "portrait") effectiveAspectRatio = 9 / 16;
-      else effectiveAspectRatio = 16 / 9; // نسبة افتراضية للحالة auto
-    }
-
-    // تطبيق نسبة الأبعاد المستنتجة
-    containerStyle = { position: 'relative', width: '100%', paddingBottom: `${(1 / effectiveAspectRatio) * 100}%` };
-
-    return (
-      <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
-        <div style={containerStyle}>
-          <iframe
-            ref={iframeRef}
-            src={finalSrc}
-            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 0 }}
-            allowFullScreen
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-          />
+  // عرض حسب النوع
+  switch (type) {
+    case "youtube":
+      return <YouTubeIframe videoId={src} videoAspect={videoAspect} />;
+    case "facebook":
+      return <FacebookIframe embedUrl={src} videoAspect={videoAspect} />;
+    case "googledrive":
+      return <GoogleDriveIframe embedUrl={src} videoAspect={videoAspect} />;
+    case "streamtape":
+    case "video": {
+      let videoStyle: React.CSSProperties = { width: '100%', height: 'auto' };
+      if (videoAspect === "portrait") {
+        videoStyle = { height: '80vh', width: 'auto', margin: '0 auto' };
+      }
+      return (
+        <div className="w-full bg-black rounded-lg border border-gold/20 overflow-hidden">
+          <video src={src} style={videoStyle} controls playsInline className="w-full h-auto">
+            متصفحك لا يدعم الفيديو.
+          </video>
         </div>
-      </div>
-    );
+      );
+    }
+    case "image":
+      return <img src={src} alt={alt} className="w-full rounded-lg border border-gold/20" />;
+    default:
+      return null;
   }
-
-  // --- الصور ---
-  if (/\.(jpg|jpeg|png|gif|webp|avif)$/i.test(finalSrc)) {
-    return <img src={finalSrc} alt={alt} className="w-full rounded-lg border border-gold/20" />;
-  }
-
-  // --- الفيديو المباشر (StreamTape, MP4, إلخ) ---
-  let videoStyle: React.CSSProperties = { width: '100%', height: 'auto' };
-  if (videoAspect === "portrait") {
-    videoStyle = { height: '80vh', width: 'auto', margin: '0 auto' };
-  }
-
-  return (
-    <div className="w-full bg-black rounded-lg border border-gold/20 overflow-hidden">
-      <video
-        src={finalSrc}
-        style={videoStyle}
-        controls
-        playsInline
-        className="w-full h-auto"
-      >
-        متصفحك لا يدعم الفيديو.
-      </video>
-    </div>
-  );
 }
