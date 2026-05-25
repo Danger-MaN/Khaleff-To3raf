@@ -567,7 +567,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto", isPreview =
         previewContent = null;
     }
 
-    return <div className="w-full h-full">{previewContent}</div>;
+    return <>{previewContent}</>;
   }
 
   // ===================== وضع التشغيل الكامل (isPreview = false) =====================
