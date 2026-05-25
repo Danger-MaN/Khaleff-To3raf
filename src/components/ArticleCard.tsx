@@ -31,12 +31,20 @@ export function ArticleCard({ article, index = 0 }: { article: Article; index?: 
   const dot = CATEGORY_DOT[article.category] ?? DEFAULT_DOT;
 
   const featured = index % 5 === 0;
+  
+  // تحديد نسبة الحاوية بناءً على videoAspect الخاص بالمقال
+  const getContainerAspect = () => {
+    const videoAspect = article.videoAspect || "auto";
+    if (videoAspect === "portrait") return "aspect-[9/16]";
+    if (videoAspect === "landscape") return featured ? "aspect-[21/9]" : "aspect-[16/9]";
+    // auto أو غير محدد: نستخدم النسب الافتراضية
+    return featured ? "aspect-[21/9]" : "aspect-[16/10]";
+  };
 
   return (
     <Link
       to="/p/$id"
       params={{ id: String(article.createdAt) }}
-
       className={`group relative flex flex-col overflow-hidden rounded-xl border border-gold/25 bg-card/70 hover:border-gold transition-all duration-500 hover:-translate-y-1.5 hover:shadow-mystic animate-fade-up ${
         featured ? "md:col-span-2 lg:col-span-2" : ""
       }`}
@@ -54,9 +62,14 @@ export function ArticleCard({ article, index = 0 }: { article: Article; index?: 
       </span>
 
       {article.mediaUrl && (
-        <div className={`overflow-hidden relative ${featured ? "aspect-[21/9]" : "aspect-[16/10]"}`}>
+        <div className={`overflow-hidden relative ${getContainerAspect()}`}>
           <div className="absolute inset-0 transition-transform duration-700 group-hover:scale-105">
-            <MediaRenderer url={article.mediaUrl} alt={title} />
+            <MediaRenderer 
+              url={article.mediaUrl} 
+              alt={title} 
+              videoAspect={article.videoAspect || "auto"}
+              isPreview={true}
+            />
           </div>
           <div className="absolute inset-0 bg-gradient-to-t from-card via-card/30 to-transparent opacity-80 pointer-events-none" />
         </div>
