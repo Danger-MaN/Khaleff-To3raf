@@ -57,9 +57,9 @@ const resources = {
     translation: {
       brand: "خالف تُعرف",
       slogan: "حيث تُكسر اليقينيات وتُولد الأسئلة",
-      tagline: "فلسفة • علم تجريبي • ثقافة جنسية",
+      tagline: "فكر • علم • ثقافة",
       nav: { home: "الرئيسية", articles: "المقالات", admin: "لوحة التحكم" },
-      hero: { cta_read: "ابدأ القراءة", cta_about: "عن المنصة", eyebrow: "منصّة فكرية مُعاكسة للتيار" },
+      hero: { cta_read: "ابدأ القراءة", cta_about: "عن المنصة", eyebrow: "منصّة فكرية مضد المألوف" },
       filters: { all: "الكل", search: "ابحث في المقالات..." },
       article: {
         read_more: "اقرأ المقال",
