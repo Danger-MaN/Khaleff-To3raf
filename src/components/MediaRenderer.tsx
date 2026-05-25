@@ -30,12 +30,12 @@ function isGoogleDriveUrl(url: string): boolean {
   return /drive\.google\.com\/(file\/d\/|open\?id=)/i.test(url);
 }
 
-// رابط الصفحة الأصلية لـ Google Drive (بدون محاولة إخفاء أي شيء)
-function getGoogleDrivePageUrl(url: string): string | null {
+// رابط المعاينة المضمنة لـ Google Drive (يعمل بدون تسجيل دخول للملفات العامة)
+function getGoogleDriveEmbedUrl(url: string): string | null {
   const matchFile = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
-  if (matchFile) return `https://drive.google.com/file/d/${matchFile[1]}/view`;
+  if (matchFile) return `https://drive.google.com/file/d/${matchFile[1]}/preview`;
   const matchOpen = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-  if (matchOpen) return `https://drive.google.com/file/d/${matchOpen[1]}/view`;
+  if (matchOpen) return `https://drive.google.com/file/d/${matchOpen[1]}/preview`;
   return null;
 }
 
@@ -80,11 +80,11 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
         return;
       }
 
-      // Google Drive -> صفحة الفيديو الأصلية
+      // Google Drive -> رابط المعاينة المضمنة
       if (isGoogleDriveUrl(url)) {
-        const pageUrl = getGoogleDrivePageUrl(url);
-        if (pageUrl) {
-          setFinalSrc(pageUrl);
+        const embedUrl = getGoogleDriveEmbedUrl(url);
+        if (embedUrl) {
+          setFinalSrc(embedUrl);
           setIsIframe(true);
           return;
         }
@@ -123,7 +123,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
   if (loading) return <div className="p-8 text-center text-gold">جاري التحميل...</div>;
   if (error || !finalSrc) return <div className="p-8 text-center text-red-400">لا يمكن عرض المحتوى. <a href={url} target="_blank" rel="noopener noreferrer">فتح الرابط ↗</a></div>;
 
-  // iframe (YouTube, Google Drive Page)
+  // iframe (YouTube, Google Drive)
   if (isIframe) {
     let containerStyle: React.CSSProperties = {};
     if (videoAspect === "landscape") containerStyle = { aspectRatio: '16/9' };
