@@ -70,10 +70,10 @@ function Home() {
             {t("brand")}
           </h1>
           <div className="divider-pharaoh my-6 max-w-md mx-auto" />
-          <p className="text-xl md:text-2xl text-foreground/90 font-display italic max-w-2xl mx-auto leading-snug mt-55">
+          <p className="mt-10 text-xl md:text-2xl text-foreground/90 font-display italic max-w-2xl mx-auto leading-snug">
             {t("slogan")}
           </p>
-          <p className="mt-20 text-xs uppercase tracking-[0.3em] text-muted-foreground">
+          <p className="mt-5 text-xs uppercase tracking-[0.3em] text-muted-foreground">
             {t("tagline")}
           </p>
           <div className="mt-8 flex items-center justify-center gap-4">
