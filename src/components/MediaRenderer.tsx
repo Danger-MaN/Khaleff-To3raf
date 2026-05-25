@@ -41,13 +41,26 @@ function isTwitterVideoUrl(url: string): boolean {
   return /(twitter\.com|x\.com)\/(?:#!\/)?(\w+)\/status(?:es)?\/(\d+)/i.test(url);
 }
 
-function getTwitterEmbedUrl(url: string): string | null {
-  const match = url.match(/(?:twitter\.com|x\.com)\/(?:#!\/)?(\w+)\/status(?:es)?\/(\d+)/i);
-  if (match) {
-    const tweetId = match[2];
-    return `https://platform.twitter.com/widgets/tweet.html?dnt=true&embedId=twitter-widget-${tweetId}&frame=false&hideCard=false&hideThread=false&id=${tweetId}&lang=en&theme=dark&widgetsVersion=ed20a2b%3A1601588405575`;
+async function getTwitterEmbedUrl(url: string): Promise<string | null> {
+  try {
+    const oembedUrl = `https://publish.twitter.com/oembed?url=${encodeURIComponent(url)}&theme=dark&hide_thread=1`;
+    const response = await fetch(oembedUrl);
+    const data = await response.json();
+    if (data.html) {
+      const srcMatch = data.html.match(/src="([^"]+)"/);
+      if (srcMatch) return srcMatch[1];
+    }
+    // Fallback: extract tweet id
+    const match = url.match(/(?:twitter\.com|x\.com)\/(?:#!\/)?(\w+)\/status(?:es)?\/(\d+)/i);
+    if (match) {
+      const tweetId = match[2];
+      return `https://platform.twitter.com/widgets/tweet.html?dnt=true&id=${tweetId}&theme=dark`;
+    }
+    return null;
+  } catch (error) {
+    console.error("Twitter embed error:", error);
+    return null;
   }
-  return null;
 }
 
 // ------------------- دوال TikTok -------------------
@@ -67,6 +80,29 @@ async function getTikTokEmbedUrl(url: string): Promise<string | null> {
     return null;
   } catch (error) {
     console.error("TikTok embed error:", error);
+    return null;
+  }
+}
+
+// ------------------- دوال Instagram -------------------
+function isInstagramUrl(url: string): boolean {
+  return /(instagram\.com\/p\/|instagram\.com\/reel\/)/i.test(url);
+}
+
+async function getInstagramEmbedUrl(url: string): Promise<string | null> {
+  try {
+    const oembedUrl = `https://graph.facebook.com/v17.0/instagram_oembed?url=${encodeURIComponent(url)}&access_token=IGQVJY...`;
+    // Fallback to public oEmbed endpoint (may have rate limits)
+    const fallbackUrl = `https://api.instagram.com/oembed?url=${encodeURIComponent(url)}`;
+    const response = await fetch(fallbackUrl);
+    const data = await response.json();
+    if (data.html) {
+      const srcMatch = data.html.match(/src="([^"]+)"/);
+      if (srcMatch) return srcMatch[1];
+    }
+    return null;
+  } catch (error) {
+    console.error("Instagram embed error:", error);
     return null;
   }
 }
@@ -122,7 +158,7 @@ interface ThumbnailStripProps {
   isVisible?: boolean;
 }
 
-const SEEK_INTERVAL_MS = 1250;
+const SEEK_INTERVAL_MS = 3000;
 const THUMBNAIL_COUNT = 10;
 
 function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStripProps) {
@@ -334,7 +370,7 @@ function FacebookIframe({ embedUrl, videoAspect, isPreview = false }: { embedUrl
 }
 
 // ------------------- مكون Twitter iframe -------------------
-function TwitterIframe({ tweetId, videoAspect, isPreview = false }: { tweetId: string; videoAspect: VideoAspect; isPreview?: boolean }) {
+function TwitterIframe({ embedUrl, videoAspect, isPreview = false }: { embedUrl: string; videoAspect: VideoAspect; isPreview?: boolean }) {
   if (isPreview) {
     return (
       <div className="w-full h-full bg-black flex items-center justify-center">
@@ -356,7 +392,7 @@ function TwitterIframe({ tweetId, videoAspect, isPreview = false }: { tweetId: s
     <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
       <div style={containerStyle}>
         <iframe
-          src={`https://platform.twitter.com/widgets/tweet.html?dnt=true&id=${tweetId}&theme=dark`}
+          src={embedUrl}
           className="w-full h-full border-0"
           allowFullScreen
           sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-modals"
@@ -374,6 +410,40 @@ function TikTokIframe({ embedUrl, videoAspect, isPreview = false }: { embedUrl: 
         <div className="w-12 h-12 rounded-full bg-gold/80 flex items-center justify-center pointer-events-none">
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white">
             <path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.76-.08 1.4-.54 2.79-1.35 3.99-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.15 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z"/>
+          </svg>
+        </div>
+      </div>
+    );
+  }
+
+  let containerStyle: React.CSSProperties = {};
+  if (videoAspect === "landscape") containerStyle = { aspectRatio: '16/9' };
+  else if (videoAspect === "portrait") containerStyle = { aspectRatio: '9/16', maxHeight: '80vh', margin: '0 auto' };
+  else containerStyle = { width: '100%', height: 'auto', minHeight: '300px' };
+
+  return (
+    <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
+      <div style={containerStyle}>
+        <iframe
+          src={embedUrl}
+          className="w-full h-full border-0"
+          allowFullScreen
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-modals"
+        />
+      </div>
+    </div>
+  );
+}
+
+// ------------------- مكون Instagram iframe -------------------
+function InstagramIframe({ embedUrl, videoAspect, isPreview = false }: { embedUrl: string; videoAspect: VideoAspect; isPreview?: boolean }) {
+  if (isPreview) {
+    return (
+      <div className="w-full h-full bg-black flex items-center justify-center">
+        <div className="w-12 h-12 rounded-full bg-gold/80 flex items-center justify-center pointer-events-none">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white">
+            <path d="M12 2c2.7 0 3.1.01 4.2.06 1.2.06 2 .26 2.7.55.8.31 1.4.72 2 1.3.6.6 1 1.2 1.3 2 .3.7.5 1.5.6 2.7.1 1.1.1 1.5.1 4.2s-.01 3.1-.06 4.2c-.06 1.2-.26 2-.55 2.7-.31.8-.72 1.4-1.3 2-.6.6-1.2 1-2 1.3-.7.3-1.5.5-2.7.6-1.1.1-1.5.1-4.2.1s-3.1-.01-4.2-.06c-1.2-.06-2-.26-2.7-.55-.8-.31-1.4-.72-2-1.3-.6-.6-1-1.2-1.3-2-.3-.7-.5-1.5-.6-2.7-.1-1.1-.1-1.5-.1-4.2s.01-3.1.06-4.2c.06-1.2.26-2 .55-2.7.31-.8.72-1.4 1.3-2 .6-.6 1.2-1 2-1.3.7-.3 1.5-.5 2.7-.6 1.1-.1 1.5-.1 4.2-.1z"/>
           </svg>
         </div>
       </div>
@@ -451,7 +521,7 @@ function DirectVideoPlayer({ src, videoAspect }: DirectVideoPlayerProps) {
       const isPortrait = videoAspect === "portrait";
       const controlsList = isPortrait
         ? ["play-large", "play", "progress", "current-time", "duration", "mute", "fullscreen"]
-        : ["play-large", "play", "progress", "current-time", "duration", "mute", "captions", "settings", "pip", "airplay", "fullscreen"];
+        : ["play-large", "play", "progress", "current-time", "duration", "mute", "captions", "settings", "pip", "airplay", "fullscreen"]; // تم إزالة "volume"
 
       playerRef.current = new Plyr(videoRef.current, {
         controls: controlsList,
@@ -542,7 +612,7 @@ interface MediaRendererProps {
 }
 
 export function MediaRenderer({ url, alt = "", videoAspect = "auto", isPreview = false }: MediaRendererProps) {
-  const [type, setType] = useState<"youtube" | "facebook" | "twitter" | "tiktok" | "googledrive" | "streamtape" | "video" | "image" | null>(null);
+  const [type, setType] = useState<"youtube" | "facebook" | "twitter" | "tiktok" | "instagram" | "googledrive" | "streamtape" | "video" | "image" | null>(null);
   const [src, setSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
@@ -572,10 +642,10 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto", isPreview =
       }
 
       if (isTwitterVideoUrl(url)) {
-        const tweetId = url.match(/(?:twitter\.com|x\.com)\/(?:#!\/)?(\w+)\/status(?:es)?\/(\d+)/i)?.[2];
-        if (tweetId) {
+        const embedUrl = await getTwitterEmbedUrl(url);
+        if (embedUrl) {
           setType("twitter");
-          setSrc(tweetId);
+          setSrc(embedUrl);
           return;
         }
       }
@@ -584,6 +654,15 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto", isPreview =
         const embedUrl = await getTikTokEmbedUrl(url);
         if (embedUrl) {
           setType("tiktok");
+          setSrc(embedUrl);
+          return;
+        }
+      }
+
+      if (isInstagramUrl(url)) {
+        const embedUrl = await getInstagramEmbedUrl(url);
+        if (embedUrl) {
+          setType("instagram");
           setSrc(embedUrl);
           return;
         }
@@ -657,9 +736,11 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto", isPreview =
     case "facebook":
       return <FacebookIframe embedUrl={src} videoAspect={videoAspect} isPreview={false} />;
     case "twitter":
-      return <TwitterIframe tweetId={src} videoAspect={videoAspect} isPreview={false} />;
+      return <TwitterIframe embedUrl={src} videoAspect={videoAspect} isPreview={false} />;
     case "tiktok":
       return <TikTokIframe embedUrl={src} videoAspect={videoAspect} isPreview={false} />;
+    case "instagram":
+      return <InstagramIframe embedUrl={src} videoAspect={videoAspect} isPreview={false} />;
     case "googledrive":
       return <GoogleDriveIframe embedUrl={src} videoAspect={videoAspect} isPreview={false} />;
     case "streamtape":
