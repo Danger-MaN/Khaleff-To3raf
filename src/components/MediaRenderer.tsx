@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import type { VideoAspect } from "@/lib/articles";
 
-// ------------------- دوال مساعدة -------------------
+// ------------------- دوال مساعدة (بنفس الشكل السابق) -------------------
 function getYouTubeId(url: string): string | null {
   const patterns = [
     /youtu\.be\/([a-zA-Z0-9_-]{11})/,
@@ -78,124 +78,127 @@ async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null>
   }
 }
 
-// ------------------- مكونات iframe منفصلة لكل منصة مع توسيط عمودي وأفقي -------------------
+// ------------------- مكونات iframe مع توسيط عمودي -------------------
 
 function YouTubeIframe({ videoId, videoAspect }: { videoId: string; videoAspect: VideoAspect }) {
-  let containerStyle: React.CSSProperties = {
+  // توسيط الحاوية عموديًا باستخدام min-height
+  const wrapperStyle: React.CSSProperties = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     width: '100%',
+    minHeight: '60vh',     // يمكنك تعديل هذه القيمة حسب الرغبة
     backgroundColor: 'black',
+    borderRadius: '0.5rem',
+    overflow: 'hidden',
   };
+  let containerStyle: React.CSSProperties = {};
   let iframeStyle: React.CSSProperties = { border: 0 };
 
   if (videoAspect === "landscape") {
-    containerStyle.aspectRatio = '16/9';
-    iframeStyle.width = '100%';
-    iframeStyle.height = '100%';
+    containerStyle = { aspectRatio: '16/9', width: '100%', maxWidth: '100%' };
+    iframeStyle = { width: '100%', height: '100%' };
   } else if (videoAspect === "portrait") {
-    containerStyle.aspectRatio = '9/16';
-    containerStyle.maxHeight = '80vh';
-    containerStyle.margin = '0 auto';
-    iframeStyle.width = '100%';
-    iframeStyle.height = '100%';
+    containerStyle = { aspectRatio: '9/16', maxHeight: '80vh', margin: '0 auto' };
+    iframeStyle = { width: '100%', height: '100%' };
   } else {
-    // auto
-    containerStyle.minHeight = '300px';
-    iframeStyle.width = '100%';
-    iframeStyle.height = '100%';
+    containerStyle = { width: '100%', height: 'auto', minHeight: '300px' };
+    iframeStyle = { width: '100%', height: '100%' };
   }
 
   return (
     <div className="w-full rounded-lg border border-gold/20 overflow-hidden">
-      <div style={containerStyle}>
-        <iframe
-          src={`https://www.youtube.com/embed/${videoId}`}
-          style={iframeStyle}
-          allowFullScreen
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-        />
+      <div style={wrapperStyle}>
+        <div style={containerStyle}>
+          <iframe
+            src={`https://www.youtube.com/embed/${videoId}`}
+            style={iframeStyle}
+            allowFullScreen
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          />
+        </div>
       </div>
     </div>
   );
 }
 
 function FacebookIframe({ embedUrl, videoAspect }: { embedUrl: string; videoAspect: VideoAspect }) {
-  let containerStyle: React.CSSProperties = {
+  const wrapperStyle: React.CSSProperties = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     width: '100%',
+    minHeight: '60vh',
     backgroundColor: 'black',
+    borderRadius: '0.5rem',
+    overflow: 'hidden',
   };
+  let containerStyle: React.CSSProperties = {};
   let iframeStyle: React.CSSProperties = { border: 0 };
 
   if (videoAspect === "landscape") {
-    containerStyle.aspectRatio = '16/9';
-    iframeStyle.width = '100%';
-    iframeStyle.height = '100%';
+    containerStyle = { aspectRatio: '16/9', width: '100%' };
+    iframeStyle = { width: '100%', height: '100%' };
   } else if (videoAspect === "portrait") {
-    containerStyle.aspectRatio = '9/16';
-    containerStyle.maxHeight = '80vh';
-    containerStyle.margin = '0 auto';
-    iframeStyle.width = '100%';
-    iframeStyle.height = '100%';
+    containerStyle = { aspectRatio: '9/16', maxHeight: '80vh', margin: '0 auto' };
+    iframeStyle = { width: '100%', height: '100%' };
   } else {
-    containerStyle.minHeight = '300px';
-    iframeStyle.width = '100%';
-    iframeStyle.height = '100%';
+    containerStyle = { width: '100%', height: 'auto', minHeight: '300px' };
+    iframeStyle = { width: '100%', height: '100%' };
   }
 
   return (
     <div className="w-full rounded-lg border border-gold/20 overflow-hidden">
-      <div style={containerStyle}>
-        <iframe
-          src={embedUrl}
-          style={iframeStyle}
-          allowFullScreen
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-        />
+      <div style={wrapperStyle}>
+        <div style={containerStyle}>
+          <iframe
+            src={embedUrl}
+            style={iframeStyle}
+            allowFullScreen
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          />
+        </div>
       </div>
     </div>
   );
 }
 
 function GoogleDriveIframe({ embedUrl, videoAspect }: { embedUrl: string; videoAspect: VideoAspect }) {
-  let containerStyle: React.CSSProperties = {
+  const wrapperStyle: React.CSSProperties = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     width: '100%',
+    minHeight: '60vh',
     backgroundColor: 'black',
+    borderRadius: '0.5rem',
+    overflow: 'hidden',
   };
+  let containerStyle: React.CSSProperties = {};
   let iframeStyle: React.CSSProperties = { border: 0 };
 
   if (videoAspect === "landscape") {
-    containerStyle.aspectRatio = '16/9';
-    iframeStyle.width = '100%';
-    iframeStyle.height = '100%';
+    containerStyle = { aspectRatio: '16/9', width: '100%' };
+    iframeStyle = { width: '100%', height: '100%' };
   } else if (videoAspect === "portrait") {
-    containerStyle.aspectRatio = '9/16';
-    containerStyle.maxHeight = '80vh';
-    containerStyle.margin = '0 auto';
-    iframeStyle.width = '100%';
-    iframeStyle.height = '100%';
+    containerStyle = { aspectRatio: '9/16', maxHeight: '80vh', margin: '0 auto' };
+    iframeStyle = { width: '100%', height: '100%' };
   } else {
-    containerStyle.minHeight = '300px';
-    iframeStyle.width = '100%';
-    iframeStyle.height = '100%';
+    containerStyle = { width: '100%', height: 'auto', minHeight: '300px' };
+    iframeStyle = { width: '100%', height: '100%' };
   }
 
   return (
     <div className="w-full rounded-lg border border-gold/20 overflow-hidden">
-      <div style={containerStyle}>
-        <iframe
-          src={embedUrl}
-          style={iframeStyle}
-          allowFullScreen
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-        />
+      <div style={wrapperStyle}>
+        <div style={containerStyle}>
+          <iframe
+            src={embedUrl}
+            style={iframeStyle}
+            allowFullScreen
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          />
+        </div>
       </div>
     </div>
   );
@@ -295,33 +298,35 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
       return <GoogleDriveIframe embedUrl={src} videoAspect={videoAspect} />;
     case "streamtape":
     case "video": {
-      // توسيط الفيديو المباشر عمودياً وأفقياً
-      const containerStyle: React.CSSProperties = {
+      const wrapperStyle: React.CSSProperties = {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         width: '100%',
+        minHeight: '60vh',
         backgroundColor: 'black',
-        minHeight: '300px',
+        borderRadius: '0.5rem',
+        overflow: 'hidden',
       };
+      let containerStyle: React.CSSProperties = {};
       let videoStyle: React.CSSProperties = { display: 'block', maxWidth: '100%', maxHeight: '80vh', objectFit: 'contain' };
       if (videoAspect === "landscape") {
-        containerStyle.aspectRatio = '16/9';
-        videoStyle.width = '100%';
-        videoStyle.height = '100%';
+        containerStyle = { aspectRatio: '16/9', width: '100%' };
+        videoStyle = { width: '100%', height: '100%', objectFit: 'contain' };
       } else if (videoAspect === "portrait") {
-        containerStyle.aspectRatio = '9/16';
-        containerStyle.maxHeight = '80vh';
-        containerStyle.margin = '0 auto';
-        videoStyle.width = '100%';
-        videoStyle.height = '100%';
+        containerStyle = { aspectRatio: '9/16', maxHeight: '80vh', margin: '0 auto' };
+        videoStyle = { width: '100%', height: '100%', objectFit: 'contain' };
+      } else {
+        containerStyle = { width: '100%', height: 'auto', minHeight: '300px' };
       }
       return (
         <div className="w-full rounded-lg border border-gold/20 overflow-hidden">
-          <div style={containerStyle}>
-            <video src={src} style={videoStyle} controls playsInline>
-              متصفحك لا يدعم الفيديو.
-            </video>
+          <div style={wrapperStyle}>
+            <div style={containerStyle}>
+              <video src={src} style={videoStyle} controls playsInline>
+                متصفحك لا يدعم الفيديو.
+              </video>
+            </div>
           </div>
         </div>
       );
