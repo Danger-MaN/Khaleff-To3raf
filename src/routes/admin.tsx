@@ -13,7 +13,7 @@ import { Plus, Pencil, Trash2, LogOut, Lock, X } from "lucide-react";
 
 export const Route = createFileRoute("/admin")({ component: AdminPage });
 
-const ADMIN_PASSWORD = "khaleff2025";
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
 const AUTH_KEY = "kt_admin_auth";
 
@@ -50,7 +50,7 @@ function AdminPage() {
               </div>
             </div>
             <h2 className="font-display text-2xl text-center mb-2 gradient-gold-text">{t("admin.title")}</h2>
-            <p className="text-xs text-center text-muted-foreground mb-6">demo password: <span className="text-gold">khaleff2025</span></p>
+            <p className="text-xs text-center text-muted-foreground mb-6">Admin Password: <span className="text-gold"></span></p>
             <input
               type="password"
               value={pw}
