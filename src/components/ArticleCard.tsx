@@ -31,15 +31,6 @@ export function ArticleCard({ article, index = 0 }: { article: Article; index?: 
   const dot = CATEGORY_DOT[article.category] ?? DEFAULT_DOT;
 
   const featured = index % 5 === 0;
-  
-  // تحديد نسبة الحاوية بناءً على videoAspect الخاص بالمقال
-  const getContainerAspect = () => {
-    const videoAspect = article.videoAspect || "auto";
-    if (videoAspect === "portrait") return "aspect-[9/16]";
-    if (videoAspect === "landscape") return featured ? "aspect-[21/9]" : "aspect-[16/9]";
-    // auto أو غير محدد: نستخدم النسب الافتراضية
-    return featured ? "aspect-[21/9]" : "aspect-[16/10]";
-  };
 
   return (
     <Link
@@ -62,7 +53,7 @@ export function ArticleCard({ article, index = 0 }: { article: Article; index?: 
       </span>
 
       {article.mediaUrl && (
-        <div className={`overflow-hidden relative ${getContainerAspect()}`}>
+        <div className={`overflow-hidden relative ${featured ? "aspect-[21/9]" : "aspect-[16/10]"}`}>
           <div className="absolute inset-0 transition-transform duration-700 group-hover:scale-105">
             <MediaRenderer 
               url={article.mediaUrl} 
