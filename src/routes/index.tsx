@@ -55,28 +55,28 @@ function Home() {
     <div className="min-h-screen flex flex-col">
       <Header />
 
-      {/* HERO */}
+      {/* HERO - Modified with reduced spacing */}
       <section className="relative overflow-hidden">
         <div className="absolute inset-0 pointer-events-none">
           <div className="absolute top-20 left-1/2 -translate-x-1/2 h-[600px] w-[600px] rounded-full bg-gold/5 blur-3xl" />
           <div className="absolute top-0 left-8 bottom-0 w-px column-line opacity-50 hidden md:block" />
           <div className="absolute top-0 right-8 bottom-0 w-px column-line opacity-50 hidden md:block" />
         </div>
-        <div className="relative mx-auto max-w-5xl px-6 pt-24 pb-20 text-center">
-          <div className="inline-block text-[10px] uppercase tracking-[0.5em] text-gold mb-8 animate-shimmer">
+        <div className="relative mx-auto max-w-5xl px-6 pt-4 pb-12 text-center">
+          <div className="inline-block text-[10px] uppercase tracking-[0.5em] text-gold mb-3 animate-shimmer">
             ✦ {t("hero.eyebrow")} ✦
           </div>
           <h1 className="font-display text-6xl md:text-8xl leading-[0.95] mb-6 gradient-gold-text">
             {t("brand")}
           </h1>
-          <div className="divider-pharaoh my-8 max-w-md mx-auto" />
+          <div className="divider-pharaoh my-6 max-w-md mx-auto" />
           <p className="text-xl md:text-2xl text-foreground/90 font-display italic max-w-2xl mx-auto leading-snug">
             {t("slogan")}
           </p>
-          <p className="mt-6 text-xs uppercase tracking-[0.3em] text-muted-foreground">
+          <p className="mt-4 text-xs uppercase tracking-[0.3em] text-muted-foreground">
             {t("tagline")}
           </p>
-          <div className="mt-10 flex items-center justify-center gap-4">
+          <div className="mt-8 flex items-center justify-center gap-4">
             <a
               href="#articles"
               className="inline-flex items-center gap-2 px-7 py-3 bg-gold text-background font-medium tracking-wider uppercase text-sm rounded hover:opacity-90 transition shadow-mystic"
