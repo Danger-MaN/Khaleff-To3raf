@@ -41,8 +41,10 @@ export function ArticleCard({ article, index = 0 }: { article: Article; index?: 
       }`}
       style={{ animationDelay: `${index * 80}ms` }}
     >
+      {/* Top accent bar — unique per category */}
       <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${accent}`} />
 
+      {/* Large faded number to differentiate position */}
       <span
         aria-hidden
         className="pointer-events-none absolute top-3 end-4 font-display text-6xl leading-none text-gold/15 group-hover:text-gold/30 transition-colors select-none"
@@ -52,7 +54,9 @@ export function ArticleCard({ article, index = 0 }: { article: Article; index?: 
 
       {article.mediaUrl && (
         <div className={`overflow-hidden relative ${featured ? "aspect-[21/9]" : "aspect-[16/10]"}`}>
-          <MediaRenderer url={article.mediaUrl} alt={title} isPreview={true} />
+          <div className="absolute inset-0 transition-transform duration-700 group-hover:scale-105">
+            <MediaRenderer url={article.mediaUrl} alt={title} isPreview={true} />
+          </div>
           <div className="absolute inset-0 bg-gradient-to-t from-card via-card/30 to-transparent opacity-80 pointer-events-none" />
         </div>
       )}
