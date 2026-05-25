@@ -115,7 +115,7 @@ function FacebookIframe({ embedUrl, videoAspect }: { embedUrl: string; videoAspe
     // حاوية بنسبة 9:16 وتكون مرجعاً للموضع النسبي
     containerStyle = { aspectRatio: '9/16', maxHeight: '100vh', margin: '0 auto', position: 'relative' };
     // الـ iframe ينزل بمقدار 5% من ارتفاع الحاوية
-    iframeStyle = { position: 'absolute', top: '50%', left: 0, width: '100%', height: '95%', border: 0 };
+    iframeStyle = { position: 'absolute', top: '25%', left: 0, width: '100%', height: '95%', border: 0 };
   } else {
     containerStyle = { width: '100%', height: 'auto', minHeight: '300px' };
   }
