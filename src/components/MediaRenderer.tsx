@@ -32,7 +32,23 @@ function isGoogleDriveUrl(url: string): boolean {
   return /drive\.google\.com\/(file\/d\/|open\?id=)/i.test(url);
 }
 
+// للحصول على رابط iframe لـ Google Drive (مثل YouTube بالضبط)
 function getGoogleDriveEmbedUrl(url: string): string | null {
+  let fileId: string | null = null;
+  const matchFile = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (matchFile) {
+    fileId = matchFile[1];
+  } else {
+    const matchOpen = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if (matchOpen) fileId = matchOpen[1];
+  }
+  if (!fileId) return null;
+  // نفس صيغة YouTube ولكن لـ Drive
+  return `https://drive.google.com/file/d/${fileId}/preview`;
+}
+
+// للحصول على رابط إذا كان الفيديو من النوع القصير (Shorts) من Drive
+function getGoogleDriveShortsUrl(url: string): string | null {
   let fileId: string | null = null;
   const matchFile = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
   if (matchFile) {
@@ -238,7 +254,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
         return;
       }
 
-      // 2. Google Drive (iframe مستقل مثل YouTube)
+      // 2. Google Drive (iframe مثل YouTube تماماً)
       if (isGoogleDriveUrl(url)) {
         const embedUrl = getGoogleDriveEmbedUrl(url);
         if (embedUrl) {
@@ -329,19 +345,28 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
   if (loading) return <div className="p-8 text-center text-gold">جاري تجهيز الفيديو...</div>;
   if (error || !videoSrc) return <div className="p-8 text-center text-red-400">لا يمكن عرض المحتوى. <a href={url} target="_blank" rel="noopener noreferrer" className="underline">فتح الرابط ↗</a></div>;
 
-  // YouTube أو Google Drive (iframe مستقل)
+  // YouTube أو Google Drive (iframe - يعاملان بنفس الطريقة تماماً)
   if (videoSrc.includes('youtube.com/embed') || videoSrc.includes('drive.google.com/file/d/')) {
+    // تحديد نسبة العرض إلى الارتفاع حسب videoAspect
     let containerStyle: React.CSSProperties = {};
-    if (videoAspect === "landscape") containerStyle = { aspectRatio: '16/9' };
-    else if (videoAspect === "portrait") containerStyle = { aspectRatio: '9/16', maxHeight: '80vh', width: 'auto', margin: '0 auto' };
-    else containerStyle = { display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '200px', height: '80vh' };
+    let iframeStyle: React.CSSProperties = { width: '100%', height: '100%', border: 0 };
+    
+    if (videoAspect === "landscape") {
+      containerStyle = { aspectRatio: '16/9' };
+    } else if (videoAspect === "portrait") {
+      containerStyle = { aspectRatio: '9/16', maxHeight: '80vh', margin: '0 auto' };
+    } else {
+      // auto: نعطي ارتفاعاً تلقائياً
+      containerStyle = { width: '100%', height: 'auto', minHeight: '300px' };
+      iframeStyle = { width: '100%', height: '500px', border: 0 };
+    }
 
     return (
       <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
-        <div style={containerStyle} className="w-full relative">
+        <div style={containerStyle} className="w-full">
           <iframe
             src={videoSrc}
-            style={{ width: '100%', height: '100%', border: 0, position: videoAspect === "auto" ? 'relative' : 'absolute', top: 0, left: 0 }}
+            style={iframeStyle}
             allowFullScreen
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           />
