@@ -32,6 +32,20 @@ function isGoogleDriveUrl(url: string): boolean {
   return /drive\.google\.com\/(file\/d\/|open\?id=)/i.test(url);
 }
 
+function getGoogleDriveEmbedUrl(url: string): string | null {
+  let fileId: string | null = null;
+  const matchFile = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (matchFile) {
+    fileId = matchFile[1];
+  } else {
+    const matchOpen = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if (matchOpen) fileId = matchOpen[1];
+  }
+  if (!fileId) return null;
+  // رابط iframe مع تعطيل بعض الأزرار الزائدة
+  return `https://drive.google.com/file/d/${fileId}/preview`;
+}
+
 async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null> {
   try {
     const infoRes = await fetch(`/.netlify/functions/streamtape?url=${encodeURIComponent(shareUrl)}`);
@@ -40,18 +54,6 @@ async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null>
     return `/.netlify/functions/streamtape?direct=1&url=${encodeURIComponent(shareUrl)}`;
   } catch (err) {
     console.error("getStreamTapeProxiedUrl error:", err);
-    return null;
-  }
-}
-
-async function getGoogleDriveProxiedUrl(shareUrl: string): Promise<string | null> {
-  try {
-    const infoRes = await fetch(`/.netlify/functions/googledrive?url=${encodeURIComponent(shareUrl)}`);
-    const infoData = await infoRes.json();
-    if (!infoData.success) return null;
-    return `/.netlify/functions/googledrive?direct=1&url=${encodeURIComponent(shareUrl)}`;
-  } catch (err) {
-    console.error("getGoogleDriveProxiedUrl error:", err);
     return null;
   }
 }
@@ -237,33 +239,35 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
         return;
       }
 
-      // 2. Google Drive (عبر الوكيل)
+      // 2. Google Drive (iframe)
       if (isGoogleDriveUrl(url)) {
-        setLoading(true);
-        const src = await getGoogleDriveProxiedUrl(url);
-        if (src && isMounted) {
-          setVideoSrc(src);
-        } else if (isMounted) {
+        const embedUrl = getGoogleDriveEmbedUrl(url);
+        if (embedUrl) {
+          setVideoSrc(embedUrl);
+          setPlayerReady(true);
+          return;
+        } else {
           setError(true);
+          return;
         }
-        setLoading(false);
-        return;
       }
 
       // 3. StreamTape
       if (isStreamTapeUrl(url)) {
         setLoading(true);
-        const src = await getStreamTapeProxiedUrl(url);
-        if (src && isMounted) {
-          setVideoSrc(src);
-        } else if (isMounted) {
-          setError(true);
+        try {
+          const src = await getStreamTapeProxiedUrl(url);
+          if (src && isMounted) setVideoSrc(src);
+          else if (isMounted) setError(true);
+        } catch {
+          if (isMounted) setError(true);
+        } finally {
+          if (isMounted) setLoading(false);
         }
-        setLoading(false);
         return;
       }
 
-      // 4. Terabox (غير مدعوم)
+      // 4. Terabox (غير مدعوم حالياً)
       if (isTeraboxUrl(url)) {
         setError(true);
         return;
@@ -287,11 +291,11 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
     return () => { isMounted = false; };
   }, [url]);
 
-  // تهيئة Plyr للفيديو المباشر (وليس YouTube iframe)
+  // تهيئة Plyr للفيديو المباشر فقط (وليس YouTube أو Drive iframe)
   useEffect(() => {
     if (!videoRef.current) return;
     if (!videoSrc) return;
-    if (videoSrc.includes('youtube.com/embed')) return;
+    if (videoSrc.includes('youtube.com/embed') || videoSrc.includes('drive.google.com/file/d/')) return;
 
     if (playerRef.current) playerRef.current.destroy();
 
@@ -327,8 +331,8 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
   if (loading) return <div className="p-8 text-center text-gold">جاري تجهيز الفيديو...</div>;
   if (error || !videoSrc) return <div className="p-8 text-center text-red-400">لا يمكن عرض المحتوى. <a href={url} target="_blank" rel="noopener noreferrer" className="underline">فتح الرابط ↗</a></div>;
 
-  // YouTube (iframe)
-  if (videoSrc.includes('youtube.com/embed')) {
+  // YouTube أو Google Drive (iframe)
+  if (videoSrc.includes('youtube.com/embed') || videoSrc.includes('drive.google.com/file/d/')) {
     let containerStyle: React.CSSProperties = {};
     if (videoAspect === "landscape") containerStyle = { aspectRatio: '16/9' };
     else if (videoAspect === "portrait") containerStyle = { aspectRatio: '9/16', maxHeight: '80vh', width: 'auto', margin: '0 auto' };
@@ -336,10 +340,10 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
 
     return (
       <div className="w-full rounded-lg border border-gold/20 bg-black overflow-hidden">
-        <div style={containerStyle} className="w-full">
+        <div style={containerStyle} className="w-full relative">
           <iframe
             src={videoSrc}
-            style={{ width: '100%', height: '100%', border: 0 }}
+            style={{ width: '100%', height: '100%', border: 0, position: videoAspect === "auto" ? 'relative' : 'absolute', top: 0, left: 0 }}
             allowFullScreen
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           />
@@ -353,7 +357,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
     return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/20" />;
   }
 
-  // الفيديو المباشر (StreamTape و Google Drive الآن)
+  // الفيديو المباشر (StreamTape، MP4، إلخ)
   const isPortrait = videoAspect === "portrait";
   let containerStyle: React.CSSProperties = { display: 'flex', justifyContent: 'center' };
   let videoStyle: React.CSSProperties = { display: 'block', objectFit: 'contain', maxWidth: '100%', maxHeight: '80vh' };
