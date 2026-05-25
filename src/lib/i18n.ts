@@ -89,11 +89,11 @@ const resources = {
   },
   en: {
     translation: {
-      brand: "Khaleff To'raf",
+      brand: "Khaleff To3raf",
       slogan: "Where certainties shatter and questions are born",
-      tagline: "Philosophy • Experimental Science • Sexual Culture",
+      tagline: "Philosophy • Science • Culture",
       nav: { home: "Home", articles: "Articles", admin: "Admin" },
-      hero: { cta_read: "Start Reading", cta_about: "About", eyebrow: "A contrarian intellectual platform" },
+      hero: { cta_read: "Start Reading", cta_about: "About", eyebrow: "An intellectual platform against the norm" },
       filters: { all: "All", search: "Search articles..." },
       article: {
         read_more: "Read article",
@@ -123,8 +123,8 @@ const resources = {
   },
   fr: {
     translation: {
-      brand: "Khaleff To'raf", slogan: "Là où les certitudes se brisent et les questions naissent",
-      tagline: "Philosophie • Science expérimentale • Culture sexuelle",
+      brand: "Khaleff To3raf", slogan: "Là où les certitudes se brisent et les questions naissent",
+      tagline: "Philosophie • Science • Culture",
       nav: { home: "Accueil", articles: "Articles", admin: "Admin" },
       hero: { cta_read: "Commencer à lire", cta_about: "À propos", eyebrow: "Une plateforme intellectuelle contestataire" },
       filters: { all: "Tous", search: "Rechercher..." },
@@ -138,8 +138,8 @@ const resources = {
   },
   es: {
     translation: {
-      brand: "Khaleff To'raf", slogan: "Donde las certezas se rompen y nacen las preguntas",
-      tagline: "Filosofía • Ciencia experimental • Cultura sexual",
+      brand: "Khaleff To3raf", slogan: "Donde las certezas se rompen y nacen las preguntas",
+      tagline: "Filosofía • Ciencia • Cultura",
       nav: { home: "Inicio", articles: "Artículos", admin: "Admin" },
       hero: { cta_read: "Empezar a leer", cta_about: "Acerca", eyebrow: "Una plataforma intelectual contracorriente" },
       filters: { all: "Todos", search: "Buscar..." },
@@ -153,8 +153,8 @@ const resources = {
   },
   de: {
     translation: {
-      brand: "Khaleff To'raf", slogan: "Wo Gewissheiten zerbrechen und Fragen geboren werden",
-      tagline: "Philosophie • Experimentelle Wissenschaft • Sexualkultur",
+      brand: "Khaleff To3raf", slogan: "Wo Gewissheiten zerbrechen und Fragen geboren werden",
+      tagline: "Philosophie • Experimentelle Wissenschaft • kultur",
       nav: { home: "Start", articles: "Artikel", admin: "Admin" },
       hero: { cta_read: "Lesen beginnen", cta_about: "Über", eyebrow: "Eine konträre intellektuelle Plattform" },
       filters: { all: "Alle", search: "Suchen..." },
