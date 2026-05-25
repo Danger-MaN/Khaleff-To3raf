@@ -234,19 +234,9 @@ function ThumbnailStrip({ videoElement, onSeek, isVisible = true }: ThumbnailStr
 function YouTubeIframe({ videoId, videoAspect, isPreview = false }: { videoId: string; videoAspect: VideoAspect; isPreview?: boolean }) {
   if (isPreview) {
     return (
-      <div className="relative w-full h-full overflow-hidden bg-black">
-        <img
-          src={`https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`}
-          alt="Video thumbnail"
-          className="w-full h-full object-cover"
-          onError={(e) => {
-            (e.target as HTMLImageElement).src = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
-          }}
-        />
-        <div className="absolute inset-0 flex items-center justify-center bg-black/20 pointer-events-none">
-          <div className="w-12 h-12 rounded-full bg-gold/80 flex items-center justify-center">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>
-          </div>
+      <div className="w-full h-full bg-black flex items-center justify-center">
+        <div className="w-12 h-12 rounded-full bg-gold/80 flex items-center justify-center">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>
         </div>
       </div>
     );
@@ -274,11 +264,9 @@ function YouTubeIframe({ videoId, videoAspect, isPreview = false }: { videoId: s
 function FacebookIframe({ embedUrl, videoAspect, isPreview = false }: { embedUrl: string; videoAspect: VideoAspect; isPreview?: boolean }) {
   if (isPreview) {
     return (
-      <div className="relative w-full h-full overflow-hidden bg-black">
-        <div className="w-full h-full bg-gradient-to-br from-gray-900 to-black flex items-center justify-center">
-          <div className="w-12 h-12 rounded-full bg-gold/80 flex items-center justify-center pointer-events-none">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>
-          </div>
+      <div className="w-full h-full bg-black flex items-center justify-center">
+        <div className="w-12 h-12 rounded-full bg-gold/80 flex items-center justify-center pointer-events-none">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>
         </div>
       </div>
     );
@@ -313,11 +301,9 @@ function FacebookIframe({ embedUrl, videoAspect, isPreview = false }: { embedUrl
 function GoogleDriveIframe({ embedUrl, videoAspect, isPreview = false }: { embedUrl: string; videoAspect: VideoAspect; isPreview?: boolean }) {
   if (isPreview) {
     return (
-      <div className="relative w-full h-full overflow-hidden bg-black">
-        <div className="w-full h-full bg-gradient-to-br from-gray-900 to-black flex items-center justify-center">
-          <div className="w-12 h-12 rounded-full bg-gold/80 flex items-center justify-center pointer-events-none">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>
-          </div>
+      <div className="w-full h-full bg-black flex items-center justify-center">
+        <div className="w-12 h-12 rounded-full bg-gold/80 flex items-center justify-center pointer-events-none">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>
         </div>
       </div>
     );
@@ -532,42 +518,15 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto", isPreview =
 
   // ===================== وضع المعاينة (isPreview = true) =====================
   if (isPreview) {
-    let previewContent = null;
-
-    switch (type) {
-      case "youtube":
-        previewContent = <YouTubeIframe videoId={src} videoAspect={videoAspect} isPreview={true} />;
-        break;
-      case "facebook":
-        previewContent = <FacebookIframe embedUrl={src} videoAspect={videoAspect} isPreview={true} />;
-        break;
-      case "googledrive":
-        previewContent = <GoogleDriveIframe embedUrl={src} videoAspect={videoAspect} isPreview={true} />;
-        break;
-      case "streamtape":
-      case "video":
-        previewContent = (
-          <div className="w-full h-full overflow-hidden bg-black">
-            <div className="w-full h-full bg-gradient-to-br from-gray-900 to-black flex items-center justify-center">
-              <div className="w-12 h-12 rounded-full bg-gold/80 flex items-center justify-center pointer-events-none">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>
-              </div>
-            </div>
-          </div>
-        );
-        break;
-      case "image":
-        previewContent = (
-          <div className="w-full h-full overflow-hidden bg-black">
-            <img src={src} alt={alt} className="w-full h-full object-cover" />
-          </div>
-        );
-        break;
-      default:
-        previewContent = null;
-    }
-
-    return <div className="w-full h-full">{previewContent}</div>;
+    return (
+      <div className="w-full h-full bg-black flex items-center justify-center">
+        <div className="w-12 h-12 rounded-full bg-gold/80 flex items-center justify-center">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white">
+            <path d="M8 5v14l11-7z"/>
+          </svg>
+        </div>
+      </div>
+    );
   }
 
   // ===================== وضع التشغيل الكامل (isPreview = false) =====================
