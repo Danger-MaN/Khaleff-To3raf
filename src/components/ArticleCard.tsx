@@ -2,7 +2,6 @@ import { Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { type Article } from "@/lib/articles";
 import { categoryLabel } from "@/lib/categories";
-import { MediaRenderer } from "./MediaRenderer";
 
 const CATEGORY_ACCENT: Record<string, string> = {
   philosophy: "from-indigo-500/40 via-gold/30 to-transparent",
@@ -21,6 +20,21 @@ const CATEGORY_DOT: Record<string, string> = {
 const DEFAULT_ACCENT = "from-gold/40 via-gold/20 to-transparent";
 const DEFAULT_DOT = "bg-gold";
 
+// دالة لاستخراج معرف اليوتيوب من الرابط (للبطاقة فقط)
+function getYouTubeThumbnail(url: string): string | null {
+  const patterns = [
+    /youtu\.be\/([a-zA-Z0-9_-]{11})/,
+    /youtube\.com\/watch\?v=([a-zA-Z0-9_-]{11})/,
+    /youtube\.com\/embed\/([a-zA-Z0-9_-]{11})/,
+    /youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/,
+  ];
+  for (const p of patterns) {
+    const m = url.match(p);
+    if (m) return `https://img.youtube.com/vi/${m[1]}/mqdefault.jpg`;
+  }
+  return null;
+}
+
 export function ArticleCard({ article, index = 0 }: { article: Article; index?: number }) {
   const { t, i18n } = useTranslation();
   const lang = i18n.language?.split("-")[0] ?? "ar";
@@ -31,6 +45,9 @@ export function ArticleCard({ article, index = 0 }: { article: Article; index?: 
   const dot = CATEGORY_DOT[article.category] ?? DEFAULT_DOT;
 
   const featured = index % 5 === 0;
+  
+  // الحصول على صورة مصغرة للمعاينة
+  const thumbnailUrl = article.mediaUrl ? getYouTubeThumbnail(article.mediaUrl) : null;
 
   return (
     <Link
@@ -54,9 +71,21 @@ export function ArticleCard({ article, index = 0 }: { article: Article; index?: 
 
       {article.mediaUrl && (
         <div className={`overflow-hidden relative ${featured ? "aspect-[21/9]" : "aspect-[16/10]"}`}>
-          <div className="absolute inset-0 transition-transform duration-700 group-hover:scale-105">
-            <MediaRenderer url={article.mediaUrl} alt={title} isPreview={true} />
-          </div>
+          {thumbnailUrl ? (
+            <img
+              src={thumbnailUrl}
+              alt={title}
+              className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+            />
+          ) : (
+            <div className="w-full h-full bg-black flex items-center justify-center">
+              <div className="w-12 h-12 rounded-full bg-gold/80 flex items-center justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white">
+                  <path d="M8 5v14l11-7z"/>
+                </svg>
+              </div>
+            </div>
+          )}
           <div className="absolute inset-0 bg-gradient-to-t from-card via-card/30 to-transparent opacity-80 pointer-events-none" />
         </div>
       )}
