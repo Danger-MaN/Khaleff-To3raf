@@ -66,7 +66,7 @@ function Home() {
           <div className="inline-block text-[10px] uppercase tracking-[0.5em] text-gold mb-5 animate-shimmer">
             ✦ {t("hero.eyebrow")} ✦
           </div>
-          <h1 className="font-display text-6xl md:text-8xl leading-[0.95] mb-6 gradient-gold-text">
+          <h1 className="font-display text-6xl md:text-8xl leading-[0.95] mb-4 gradient-gold-text">
             {t("brand")}
           </h1>
           <div className="divider-pharaoh my-6 max-w-md mx-auto" />
