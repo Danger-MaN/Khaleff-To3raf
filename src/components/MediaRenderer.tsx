@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import type { VideoAspect } from "@/lib/articles";
 
-// ------------------- دوال مساعدة (بنفس الشكل السابق) -------------------
+// ------------------- دوال مساعدة (نفس السابق) -------------------
 function getYouTubeId(url: string): string | null {
   const patterns = [
     /youtu\.be\/([a-zA-Z0-9_-]{11})/,
@@ -78,16 +78,14 @@ async function getStreamTapeProxiedUrl(shareUrl: string): Promise<string | null>
   }
 }
 
-// ------------------- مكونات iframe مع توسيط عمودي -------------------
-
+// ------------------- مكون iframe (YouTube, Facebook, Drive) - بدون تغيير -------------------
 function YouTubeIframe({ videoId, videoAspect }: { videoId: string; videoAspect: VideoAspect }) {
-  // توسيط الحاوية عموديًا باستخدام min-height
   const wrapperStyle: React.CSSProperties = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     width: '100%',
-    minHeight: '60vh',     // يمكنك تعديل هذه القيمة حسب الرغبة
+    minHeight: '60vh',
     backgroundColor: 'black',
     borderRadius: '0.5rem',
     overflow: 'hidden',
@@ -96,7 +94,7 @@ function YouTubeIframe({ videoId, videoAspect }: { videoId: string; videoAspect:
   let iframeStyle: React.CSSProperties = { border: 0 };
 
   if (videoAspect === "landscape") {
-    containerStyle = { aspectRatio: '16/9', width: '100%', maxWidth: '100%' };
+    containerStyle = { aspectRatio: '16/9', width: '100%' };
     iframeStyle = { width: '100%', height: '100%' };
   } else if (videoAspect === "portrait") {
     containerStyle = { aspectRatio: '9/16', maxHeight: '80vh', margin: '0 auto' };
@@ -298,15 +296,38 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
       return <GoogleDriveIframe embedUrl={src} videoAspect={videoAspect} />;
     case "streamtape":
     case "video": {
+      // eslint-disable-next-line react-hooks/rules-of-hooks
+      const [isPlaying, setIsPlaying] = useState(false);
+      // eslint-disable-next-line react-hooks/rules-of-hooks
+      const videoRef = useRef<HTMLVideoElement>(null);
+
+      // eslint-disable-next-line react-hooks/rules-of-hooks
+      useEffect(() => {
+        const video = videoRef.current;
+        if (!video) return;
+        const handlePlay = () => setIsPlaying(true);
+        const handlePause = () => setIsPlaying(false);
+        const handleEnded = () => setIsPlaying(false);
+        video.addEventListener('play', handlePlay);
+        video.addEventListener('pause', handlePause);
+        video.addEventListener('ended', handleEnded);
+        return () => {
+          video.removeEventListener('play', handlePlay);
+          video.removeEventListener('pause', handlePause);
+          video.removeEventListener('ended', handleEnded);
+        };
+      }, []);
+
       const wrapperStyle: React.CSSProperties = {
         display: 'flex',
-        alignItems: 'center',
+        alignItems: isPlaying ? 'center' : 'flex-start',
         justifyContent: 'center',
         width: '100%',
-        minHeight: '60vh',
+        minHeight: isPlaying ? '60vh' : 'auto',
         backgroundColor: 'black',
         borderRadius: '0.5rem',
         overflow: 'hidden',
+        transition: 'all 0.3s ease',
       };
       let containerStyle: React.CSSProperties = {};
       let videoStyle: React.CSSProperties = { display: 'block', maxWidth: '100%', maxHeight: '80vh', objectFit: 'contain' };
@@ -323,7 +344,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
         <div className="w-full rounded-lg border border-gold/20 overflow-hidden">
           <div style={wrapperStyle}>
             <div style={containerStyle}>
-              <video src={src} style={videoStyle} controls playsInline>
+              <video ref={videoRef} src={src} style={videoStyle} controls playsInline>
                 متصفحك لا يدعم الفيديو.
               </video>
             </div>
