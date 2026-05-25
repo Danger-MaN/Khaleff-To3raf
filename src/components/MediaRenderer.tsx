@@ -42,7 +42,6 @@ function getGoogleDriveEmbedUrl(url: string): string | null {
     if (matchOpen) fileId = matchOpen[1];
   }
   if (!fileId) return null;
-  // رابط iframe الرسمي مع تعطيل بعض الأزرار
   return `https://drive.google.com/file/d/${fileId}/preview`;
 }
 
@@ -239,7 +238,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
         return;
       }
 
-      // 2. Google Drive (iframe)
+      // 2. Google Drive (iframe مستقل مثل YouTube)
       if (isGoogleDriveUrl(url)) {
         const embedUrl = getGoogleDriveEmbedUrl(url);
         if (embedUrl) {
@@ -289,10 +288,11 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
     return () => { isMounted = false; };
   }, [url]);
 
-  // تهيئة Plyr للفيديو المباشر فقط (StreamTape، MP4)
+  // تهيئة Plyr فقط للفيديو المباشر (StreamTape، MP4)
   useEffect(() => {
     if (!videoRef.current) return;
     if (!videoSrc) return;
+    // إذا كان iframe (YouTube أو Drive)، لا نستخدم Plyr
     if (videoSrc.includes('youtube.com/embed') || videoSrc.includes('drive.google.com/file/d/')) return;
 
     if (playerRef.current) playerRef.current.destroy();
@@ -329,7 +329,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
   if (loading) return <div className="p-8 text-center text-gold">جاري تجهيز الفيديو...</div>;
   if (error || !videoSrc) return <div className="p-8 text-center text-red-400">لا يمكن عرض المحتوى. <a href={url} target="_blank" rel="noopener noreferrer" className="underline">فتح الرابط ↗</a></div>;
 
-  // YouTube أو Google Drive (iframe)
+  // YouTube أو Google Drive (iframe مستقل)
   if (videoSrc.includes('youtube.com/embed') || videoSrc.includes('drive.google.com/file/d/')) {
     let containerStyle: React.CSSProperties = {};
     if (videoAspect === "landscape") containerStyle = { aspectRatio: '16/9' };
@@ -355,7 +355,7 @@ export function MediaRenderer({ url, alt = "", videoAspect = "auto" }: MediaRend
     return <img src={videoSrc} alt={alt} className="w-full rounded-lg border border-gold/20" />;
   }
 
-  // الفيديو المباشر (StreamTape، MP4)
+  // الفيديو المباشر (StreamTape، MP4) مع Plyr وأزرار متناسقة
   const isPortrait = videoAspect === "portrait";
   let containerStyle: React.CSSProperties = { display: 'flex', justifyContent: 'center' };
   let videoStyle: React.CSSProperties = { display: 'block', objectFit: 'contain', maxWidth: '100%', maxHeight: '80vh' };
